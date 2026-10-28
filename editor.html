@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ВЖУХ — редактор расписания</title>
+  <link rel="stylesheet" href="css/shared.css">
+  <link rel="stylesheet" href="css/04-corporate.css">
+  <link rel="stylesheet" href="css/editor.css">
+</head>
+<body class="v04">
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/emblem.jpg" alt="Эмблема клуба ВЖУХ">
+      <span class="brand-name">ВЖУХ · редактор</span>
+    </a>
+    <div class="editor-actions">
+      <button class="btn btn-ghost" id="btn-load-txt" type="button">📥 Загрузить файл с планом недели</button>
+      <button class="btn btn-ghost" id="btn-draft" type="button" hidden>Вернуть черновик</button>
+      <button class="btn btn-primary" id="btn-download" type="button">Скачать новый schedule.js</button>
+      <input type="file" id="file-plan" accept=".txt,text/plain" hidden>
+    </div>
+  </div>
+</header>
+
+<main class="section">
+  <div class="container">
+
+    <p class="section-kicker">Инструкция</p>
+    <h2 class="section-title">Редактор расписания</h2>
+    <ol class="editor-instructions">
+      <li>Правьте поля ниже. День недели — заголовок карточки; у каждой тренировки — название, время, место и описание.</li>
+      <li>Можно начать не с форм, а с <strong>готового файла плана</strong>: кнопка «📥 Загрузить файл с планом недели» заполнит формы из TXT-файла (образец — <code>план-недели — шаблон.txt</code>).</li>
+      <li>Фото тренировки: положите картинку в папку <strong>images</strong> и впишите её имя в поле «Фото» (например, <code>техника.jpg</code>). Без фото — оставьте поле пустым.</li>
+      <li>Нажмите <strong>«Скачать новый schedule.js»</strong> — файл сохранится в «Загрузки».</li>
+      <li>Переместите скачанный файл в папку <strong>data</strong> с заменой старого. Имя файла менять нельзя — должно быть <code>schedule.js</code>.</li>
+      <li>Когда сайт размещён на хостинге: заполните блок <strong>«Публикация на сайт»</strong> внизу страницы и нажмите «🚀 Опубликовать на сайт» — файл запишется на сервер сам, перемещать ничего не нужно.</li>
+      <li>Откройте сайт <code>index.html</code> и обновите (F5).</li>
+    </ol>
+    <p class="editor-tip">Черновик сохраняется автоматически: если закрыли страницу — кнопка «Вернуть черновик» вернёт правки.</p>
+
+    <div class="editor-topfields">
+      <label>Подзаголовок над неделей
+        <input id="f-subtitle" type="text" placeholder="Неделя 28 сентября — 4 октября...">
+      </label>
+      <label>Примечание под расписанием
+        <input id="f-footnote" type="text">
+      </label>
+    </div>
+
+    <div id="days"></div>
+
+    <button class="btn btn-ghost btn-add-day" id="btn-add-day" type="button">+ Добавить день</button>
+
+    <section class="publish-box">
+      <h3 class="publish-title">Публикация на сайт</h3>
+      <p class="publish-hint">Работает, когда сайт уже размещён на хостинге и на нём установлен файл <code>publish.php</code> с заданным паролем. Локально не публикуется — используйте «Скачать новый schedule.js».</p>
+      <div class="publish-fields">
+        <label>Адрес сайта
+          <input id="f-site" type="text" placeholder="https://vzuh.run" autocomplete="off">
+        </label>
+        <label>Пароль публикации
+          <input id="f-password" type="password" placeholder="пароль из publish.php" autocomplete="off">
+        </label>
+      </div>
+      <div class="publish-actions">
+        <button class="btn btn-primary" id="btn-publish" type="button">🚀 Опубликовать на сайт</button>
+        <span class="publish-status" id="publish-status" role="status"></span>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<script>
+/* Подрыв кеша (?cb=…): расписание на хостинге может обновить кто-то
+   другой — редактор обязан всегда показывать актуальную неделю */
+(function () {
+  ["data/schedule.js", "js/editor.js"].forEach(function (src) {
+    var s = document.createElement("script");
+    s.src = src + "?cb=" + Date.now();
+    s.async = false; /* исполнять строго в этом порядке */
+    document.body.appendChild(s);
+  });
+})();
+</script>
+</body>
+</html>

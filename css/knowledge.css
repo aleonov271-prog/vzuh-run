@@ -1,0 +1,240 @@
+/* База знаний ВЖУХ — дерево/поиск/чипы поверх shared.css + 04-corporate.css */
+
+/* скрытые блоки должны реально скрываться (display не переигрывает hidden) */
+.kb [hidden] { display: none !important; }
+
+/* --- Строка поиска ----------------------------------------------- */
+.kb-searchwrap {
+  position: relative;
+  margin: 26px 0 14px;
+  max-width: 640px;
+}
+/* sticky поверх потока — поиск всегда под рукой, шапка выше по z-index */
+.kb .kb-searchwrap {
+  position: sticky;
+  top: 70px;
+  z-index: 6;
+  background: var(--c-bg);
+  padding: 4px 0;
+}
+.kb-searchwrap::after { /* маска под прозрачными краями поля */
+  content: "";
+  position: absolute;
+  left: -50px; right: -50px; top: 0; bottom: 0;
+  z-index: -1;
+  background: var(--c-bg);
+}
+.kb-search {
+  width: 100%;
+  padding: 14px 44px 14px 16px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--c-text);
+  background: var(--c-card);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-lg);
+  outline-offset: 2px;
+}
+.kb-search:focus {
+  border-color: var(--c-accent);
+  box-shadow: var(--shadow);
+}
+.kb-clear {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--c-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 6px;
+}
+.kb-clear:hover { color: var(--c-accent); }
+
+/* --- Дерево: группа → тема → заметки -------------------------------- */
+.kb-tree details { margin: 0; }
+.kb-group {
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-lg);
+  background: var(--c-card);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.kb-group > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 16px 20px;
+  cursor: pointer;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 1.15rem;
+  list-style: none;
+}
+.kb-group > summary::-webkit-details-marker { display: none; }
+.kb-group > summary::before { content: "▸"; color: var(--c-accent); transition: transform 0.15s; }
+.kb-group[open] > summary::before { transform: rotate(90deg); }
+.kb-group > summary:hover, .kb-group > summary:focus-visible { color: var(--c-accent); }
+.kb-count {
+  color: var(--c-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.kb-topics { padding: 0 20px 18px; }
+.kb-topic {
+  border-top: 1px solid var(--c-line);
+  padding-top: 6px;
+}
+.kb-topic:first-child { border-top: none; }
+.kb-topic > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 6px;
+  cursor: pointer;
+  font-weight: 700;
+  font-family: var(--font-head);
+  list-style: none;
+}
+.kb-topic > summary::-webkit-details-marker { display: none; }
+.kb-topic > summary::before { content: "+"; color: var(--c-accent); font-weight: 700; }
+.kb-topic[open] > summary::before { content: "–"; }
+.kb-topic > summary:hover { color: var(--c-accent); }
+
+.kb-cards { display: grid; gap: 14px; margin: 4px 6px 12px; }
+
+/* --- Карточка заметки ------------------------------------------------ */
+.kb-card header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.kb-card h3 { font-size: 1.05rem; }
+.kb-card > .body {
+  margin-top: 10px;
+  color: var(--c-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.kb-card > .body strong { color: var(--c-text); }
+.kb-card meta, .kb-card .meta {
+  color: var(--c-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.kb-card .idbadge {
+  color: var(--c-accent);
+  text-decoration: none;
+  font-weight: 700;
+}
+.kb-card .idbadge:hover { text-decoration: underline; }
+
+/* «Продолжение» внутри заметки */
+.kb-card .cont-mark {
+  margin-top: 14px;
+  color: var(--c-accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.kb-card .cont-body { color: var(--c-muted); font-size: 0.95rem; line-height: 1.55; }
+
+/* Пометка про видео в оригинале */
+.kb-card .vid-note {
+  display: block;
+  margin-top: 12px;
+  font-size: 0.82rem;
+  color: var(--c-muted);
+  border-top: 1px dashed var(--c-line);
+  padding-top: 8px;
+}
+
+/* Подсветка найденного */
+.kb-card mark {
+  background: var(--c-accent-2);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* --- Режим результатов поиска --------------------------------------- */
+.kb-results { display: grid; gap: 14px; }
+.kb-results-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.kb-results-count { color: var(--c-muted); font-size: 0.9rem; }
+.kb-results-back {
+  border: 1px solid var(--c-line);
+  background: var(--c-card);
+  color: var(--c-text);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.kb-results-back:hover { color: var(--c-accent); border-color: var(--c-accent); }
+.kb-result-path {
+  color: var(--c-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.kb-results-cap { color: var(--c-muted); font-size: 0.85rem; margin: 4px 0 0; }
+.kb-empty {
+  border: 1px dashed var(--c-line);
+  border-radius: var(--radius-lg);
+  padding: 26px;
+  text-align: center;
+  color: var(--c-muted);
+}
+
+/* --- Кнопка «Наверх» -------------------------------------------------- */
+.kb-top {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9;
+  border: 1px solid var(--c-line);
+  background: var(--c-card);
+  color: var(--c-text);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.kb-top:hover { color: var(--c-accent); border-color: var(--c-accent); }
+
+/* Сообщение об ошибке/загрузке */
+.kb-loading {
+  border: 1px dashed var(--c-line);
+  border-radius: var(--radius-lg);
+  padding: 26px;
+  text-align: center;
+  color: var(--c-muted);
+}
+
+/* --- Якоря под sticky-шапку ------------------------------------------ */
+.kb .kb-card, .kb .kb-topic, .kb .kb-group { scroll-margin-top: 92px; }
+
+/* --- Адаптив ---------------------------------------------------------- */
+@media (max-width: 1024px) {
+  .kb-topics { padding: 0 14px 14px; }
+}
+@media (max-width: 640px) {
+  .kb-search { font-size: 16px; } /* iOS не зумит при фокусе */
+  .kb-searchwrap { margin-top: 18px; }
+  .kb-group > summary { padding: 14px 16px; font-size: 1.05rem; }
+  .kb-topics { padding: 0 16px 14px; }
+  .kb-card { padding: 16px 16px 18px; }
+  .kb-top { right: 12px; bottom: 12px; padding: 9px 12px; }
+}

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>База знаний · ВЖУХ — беговой клуб</title>
+  <meta name="description" content="База знаний бегового клуба «ВЖУХ»: техника бега, тренировочные планы, пульс и восстановление — простыми словами для любителей.">
+  <link rel="canonical" href="https://vzuh.run/knowledge.html">
+  <meta property="og:title" content="База знаний · ВЖУХ — беговой клуб">
+  <meta property="og:description" content="Техника бега, тренировочные планы, пульс и восстановление — простыми словами для любителей.">
+  <meta property="og:image" content="https://vzuh.run/assets/emblem.jpg">
+  <meta property="og:url" content="https://vzuh.run/knowledge.html">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ru_RU">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="icon" href="assets/favicon.ico">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/shared.css">
+  <link rel="stylesheet" href="css/04-corporate.css">
+  <link rel="stylesheet" href="css/knowledge.css">
+</head>
+<body class="v04">
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="/">
+      <img class="brand-logo" src="assets/emblem.jpg" alt="Эмблема клуба ВЖУХ: сердце из бегущих дуг">
+      <span class="brand-name">ВЖУХ</span>
+    </a>
+    <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+      <a href="/">Главная</a>
+      <a href="/#about">О клубе</a>
+      <a href="/#training">Тренировки</a>
+      <a href="knowledge.html" aria-current="page">База знаний</a>
+      <a href="/ai-plan/">План подготовки</a>
+      <a href="/#schedule">Расписание</a>
+      <a href="/#faq">Вопросы</a>
+      <a href="/#contacts">Контакты</a>
+    </nav>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button>
+  </div>
+</header>
+
+<main class="section kb" id="top">
+  <div class="container">
+    <p class="section-kicker">База знаний</p>
+    <h1 class="section-title">Бег: техника, тренировки, здоровье</h1>
+    <p class="section-lead">Заметки тренера Александра Трофимова — открывайте темы по дереву
+      или ищите по слову и&nbsp;#тегу.
+      Все темы доступны и&nbsp;как отдельные страницы: <a href="kb/">База знаний — все темы</a>.</p>
+
+    <div class="kb-searchwrap">
+      <input class="kb-search" id="kb-search" type="search"
+             placeholder="Поиск по заметкам" autocomplete="off" spellcheck="false"
+             aria-label="Поиск по базе знаний">
+      <button class="kb-clear" id="kb-clear" type="button" hidden aria-label="Очистить поиск">✕</button>
+    </div>
+
+    <div class="kb-tree" id="kb-tree" aria-live="polite">
+      <p class="kb-loading">Загрузка базы знаний…</p>
+    </div>
+    <div class="kb-results" id="kb-results" hidden></div>
+
+    <button class="kb-top" id="kb-top" type="button" hidden aria-label="Наверх">↑ Наверх</button>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <img src="assets/emblem.jpg" alt="Эмблема клуба ВЖУХ">
+      <span>ВЖУХ — беговой клуб · Москва</span>
+    </div>
+    <nav class="footer-links" aria-label="Ссылки в подвале">
+      <a href="/">Главная</a>
+      <a href="/#training">Тренировки</a>
+      <a href="knowledge.html" aria-current="page">База знаний</a>
+      <a href="/ai-plan/">План подготовки</a>
+      <a href="/#contacts">Контакты</a>
+    </nav>
+    <span>© 2026 ВЖУХ</span>
+  </div>
+</footer>
+
+<script>
+/* Кеш: версия в URL (?v=…), не Date.now(). Хостинг кеширует статику на 7 дней,
+   а ?cb=Date.now() заставлял браузеры каждый визит перекачивать
+   0,5 МБ knowledge.js. Порядок важен: данные, потом скрипты.
+   ВАЖНО: после публикации новой базы (kb.php) поднять версию здесь. */
+(function () {
+  var V = "2026-10-12";
+  ["data/knowledge.js", "js/site.js", "js/knowledge.js"].forEach(function (src) {
+    var s = document.createElement("script");
+    s.src = src + "?v=" + V;
+    s.async = false; /* исполнять строго в этом порядке */
+    document.body.appendChild(s);
+  });
+})();
+</script>
+</body>
+</html>

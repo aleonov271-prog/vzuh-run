@@ -1,0 +1,38 @@
+# --- секреты и рабочие файлы: в публичный репозиторий не попадают ---
+# ключи GigaChat (в корне ai-plan есть и файл-папка с ключами)
+ai-plan/Gigachat_API/
+# локальные файлы с ключом и паролями (см. чек-лист github/)
+ai-plan/secrets.php
+secrets.php
+
+# данные времени исполнения сервиса планов
+ai-plan/data/
+ai-plan/out/
+ai-plan/diag.php
+ai-plan/delete-diag.php
+ai-plan/model-log.txt
+ai-plan/*.xlsx
+
+# -- локальные рабочие материалы --
+Logs/
+_Ненужности/
+editor — копия.html
+knowledge — копия.html
+2026-10-12-vzuh-run-seo-audit.md
+план-недели — шаблон.txt
+
+# внутрипроектные инструкции: содержат пароли и внутренние детали
+расписание — инструкция.md
+база-знаний — инструкция.md
+яндекс-вебмастер — инструкция.md
+
+# персональные данные посетителей — только на хостинге
+data/reviews.js
+data/_backups/
+
+# системное
+Thumbs.db
+.DS_Store
+*.log
+node_modules/
+__pycache__/

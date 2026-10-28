@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>План подготовки к забегу · ВЖУХ — беговой клуб</title>
+  <meta name="description" content="Ответьте на короткие вопросы — получите готовый план тренировок к вашей целевой дистанции в формате Excel. База знаний бегового клуба «ВЖУХ», Москва.">
+  <link rel="canonical" href="https://vzuh.run/ai-plan/">
+  <meta property="og:title" content="План подготовки к забегу · ВЖУХ">
+  <meta property="og:description" content="Ответьте на короткие вопросы — получите готовый план тренировок в Excel.">
+  <meta property="og:image" content="https://vzuh.run/assets/emblem.jpg">
+  <meta property="og:url" content="https://vzuh.run/ai-plan/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ru_RU">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+  <link rel="icon" href="/assets/favicon.ico">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="/css/shared.css">
+  <link rel="stylesheet" href="/css/04-corporate.css">
+</head>
+<body class="v04">
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/assets/emblem.jpg" alt="Эмблема клуба ВЖУХ: сердце из бегущих дуг">
+      <span class="brand-name">ВЖУХ</span>
+    </a>
+    <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+      <a href="/">Главная</a>
+      <a href="/#training">Тренировки</a>
+      <a href="/knowledge.html">База знаний</a>
+      <a href="/ai-plan/" aria-current="page">План подготовки</a>
+      <a href="/#contacts">Контакты</a>
+    </nav>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button>
+  </div>
+</header>
+
+<main class="section" id="top">
+  <div class="container">
+    <p class="section-kicker">План подготовки</p>
+    <h1 class="section-title">План тренировок под вашу дистанцию</h1>
+    <p class="section-lead">Ответьте на короткие вопросы — и получите готовый план подготовки
+      в Excel-файле: по неделям, с темпами, пульсовыми зонами и пояснениями.
+      План опирается на методику тренера клуба «ВЖУХ» Александра Трофимова
+      (техника прежде объёмов, контроль по зонам, восстановление).</p>
+
+    <form class="review-form" id="plan-form" novalidate>
+      <h3 class="review-form-title">Опросник</h3>
+
+      <label for="f-distance">Целевая дистанция *</label>
+      <select id="f-distance" name="distance" required>
+        <option value="5">5 км</option>
+        <option value="10">10 км</option>
+        <option value="15">15 км</option>
+        <option value="21.1" selected>Полумарафон (21,1 км)</option>
+        <option value="42.2">Марафон (42,2 км)</option>
+        <option value="other">Другая дистанция</option>
+      </select>
+
+      <div id="f-custom-distance-row" hidden>
+        <label for="f-custom-distance">Ваша дистанция, с точки (например 8 или 25.5)*</label>
+        <input id="f-custom-distance" name="custom_distance" type="text" maxlength="16" placeholder="например 8">
+      </div>
+
+      <label for="f-target">Планируемый результат на старте (ЧЧ:ММ)</label>
+      <input id="f-target" name="target_time" type="text" maxlength="8" placeholder="например 1:45" inputmode="numeric">
+      <p class="form-note">Если укажете — темпы тренировок подберутся под вашу цель.</p>
+
+      <label for="f-race-date">Дата старта (если известна)</label>
+      <input id="f-race-date" name="race_date" type="date" min="">
+
+      <label for="f-start-date">Дата, когда готовы начать тренировки (необязательно)</label>
+      <input id="f-start-date" name="start_date" type="date" min="">
+      <p class="form-note">План начнётся с этой даты: первая неделя может быть неполной, остальные пойдут строго с понедельника.</p>
+
+      <div id="f-weeks-row" hidden>
+        <label for="f-weeks">Сколько недель остаётся до старта? *</label>
+        <input id="f-weeks" name="weeks" type="number" min="4" max="52" value="12">
+        <p class="form-note">Укажите дату старта выше — поле недель заполнится само.</p>
+      </div>
+
+      <label for="f-experience">Опыт бега *</label>
+      <select id="f-experience" name="experience" required>
+        <option value="">— выберите —</option>
+        <option value="none">Никогда не бегал(а) системно</option>
+        <option value="lt1">Меньше года</option>
+        <option value="1-3">1–3 года</option>
+        <option value="gt3">Больше 3 лет</option>
+      </select>
+
+      <label for="f-km-week">Сколько километров в неделю бегаете сейчас? *</label>
+      <input id="f-km-week" name="km_per_week" type="number" min="0" max="300" value="0" required>
+
+      <label for="f-longest">Самая длинная пробежка за последний месяц, км?</label>
+      <input id="f-longest" name="longest_run" type="number" min="0" max="300" value="0">
+
+      <label for="f-days-week">Сколько тренировок в неделю готовы выдерживать? *</label>
+      <select id="f-days-week" name="days_per_week" required>
+        <option value="2">2</option>
+        <option value="3" selected>3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+      </select>
+
+      <label>Дни недели, когда удобно тренироваться (необязательно)</label>
+      <div class="day-pills" id="f-pref-days">
+        <label class="day-pill"><input type="checkbox" value="1">ПН</label>
+        <label class="day-pill"><input type="checkbox" value="2">ВТ</label>
+        <label class="day-pill"><input type="checkbox" value="3">СР</label>
+        <label class="day-pill"><input type="checkbox" value="4">ЧТ</label>
+        <label class="day-pill"><input type="checkbox" value="5">ПТ</label>
+        <label class="day-pill"><input type="checkbox" value="6">СБ</label>
+        <label class="day-pill"><input type="checkbox" value="7">ВС</label>
+      </div>
+      <p class="form-note">Приоритет: отмеченные дни сильнее, чем число выше — план
+        распишется строго по отмеченным дням (их количество и станет числом тренировок).
+        Ничего не отметите — план построится по количеству из поля выше.
+        День основного старта будет тренировочным только в самой неделе старта;
+        промежуточные старты из поля «Пожелания» тоже станут тренировочными днями —
+        в их даты в плане будет стоять сам старт.</p>
+
+      <label for="f-place">Где будете бегать?</label>
+      <select id="f-place" name="place">
+        <option value="park">Парк / улицы</option>
+        <option value="stadium">Стадион</option>
+        <option value="gym">Тренажёрный зал</option>
+        <option value="mix">Везде понемногу</option>
+      </select>
+
+      <label for="f-gender">Пол *</label>
+      <select id="f-gender" name="gender" required>
+        <option value="">— выберите —</option>
+        <option value="м">мужской</option>
+        <option value="ж">женский</option>
+      </select>
+
+      <label for="f-age">Возраст *</label>
+      <input id="f-age" name="age" type="number" min="8" max="99" required>
+      <p class="form-note">Пол и возраст нужны для расчёта границ пульсовых зон.</p>
+
+      <label for="f-weight">Вес, кг (опционально)</label>
+      <input id="f-weight" name="weight" type="number" min="25" max="250" placeholder="">
+
+      <label for="f-injuries">Травмы и особенности («осторожно с…»)</label>
+      <input id="f-injuries" name="injuries" type="text" maxlength="300" placeholder="например: правое колено после ушиба">
+
+      <label for="f-hr">Часы с пульсом есть?</label>
+      <select id="f-hr" name="hr_watch">
+        <option value="yes" selected>Да</option>
+        <option value="no">Нет</option>
+      </select>
+
+      <label for="f-thr-ae-hr">Пульс аэробного порога, уд/мин (если знаете)</label>
+      <input id="f-thr-ae-hr" name="thr_ae_hr" type="number" min="100" max="230" inputmode="numeric">
+      <p class="form-note">Пороги известны из лабораторного теста или теста на тренировке — укажите, зоны будут точнее.</p>
+
+      <label for="f-thr-ae-pace">Темп на аэробном пороге, мин/км (если знаете)</label>
+      <input id="f-thr-ae-pace" name="thr_ae_pace" type="text" maxlength="8" placeholder="например 6:10" inputmode="numeric">
+
+      <label for="f-thr-pano-hr">Пульс ПАНО, уд/мин (если знаете)</label>
+      <input id="f-thr-pano-hr" name="thr_pano_hr" type="number" min="100" max="230" inputmode="numeric">
+
+      <label for="f-thr-pano-pace">Темп на ПАНО, мин/км (если знаете)</label>
+      <input id="f-thr-pano-pace" name="thr_pano_pace" type="text" maxlength="8" placeholder="например 5:20" inputmode="numeric">
+
+      <label>Перерывы в подготовке (отпуск, поход, болезнь — необязательно)</label>
+      <div id="f-breaks">
+        <div class="brk-row">
+          <input type="date" class="brk-start" aria-label="Начало перерыва">
+          <span class="brk-sep">—</span>
+          <input type="date" class="brk-end" aria-label="Конец перерыва">
+          <label class="brk-ease-l"><input type="checkbox" class="brk-ease">снизить нагрузку до и после</label>
+          <button type="button" class="row-del" aria-label="Убрать перерыв">×</button>
+        </div>
+      </div>
+      <button type="button" class="btn list-add" id="brk-add">+ ещё перерыв</button>
+      <p class="form-note">Флажок ставьте, когда важно мягко войти в перерыв и вернуться
+        из него: поход в горы, марафонский цикл подряд — включите; короткий отпуск
+        на море, лёгкий график — можно не отмечать. Если дату конца не указать,
+        перерыв считается на неделю.</p>
+
+      <label>Промежуточные старты (дата и дистанция — необязательно)</label>
+      <div id="f-races">
+      </div>
+      <button type="button" class="btn list-add" id="race-add">+ добавить старт</button>
+      <p class="form-note">В даты стартов в плане будет стоять сам старт, а не обычная
+        тренировка; перед значимым стартом план встроит подводку (полумарафон и больше —
+        1 неделя, марафон — 2 недели, дистанции короче 15 км — без отдельной подводки).</p>
+
+      <label for="f-model">Модель генерации</label>
+      <select id="f-model" name="model">
+        <option value="lite" selected>Lite — по умолчанию</option>
+        <option value="pro">Pro — старшая модель (генерация дольше и дороже)</option>
+      </select>
+      <div id="f-pro-pass" hidden>
+        <label for="f-pro-password">Пароль для Pro</label>
+        <input id="f-pro-password" name="pro_pass" type="password" maxlength="64" autocomplete="off">
+      </div>
+
+      <div class="hp-row" aria-hidden="true">
+        <label>Веб-сайт (не заполняйте)</label>
+        <input name="website" type="text" tabindex="-1" autocomplete="off">
+      </div>
+
+      <button class="btn btn-primary" id="p-submit" type="submit">Составить план</button>
+      <p class="form-note" id="p-note" aria-live="polite"></p>
+    </form>
+
+    <div id="p-result" hidden>
+      <h3>План готов</h3>
+      <p><a class="btn btn-primary" id="p-download" href="#">Скачать план в Excel (.xlsx)</a></p>
+      <p class="form-note">Файл доступен 24 часа, потом удаляется сервером.
+      План составлен автоматически — сверяйте его со свободной запиской тренера и
+      корректируйте вместе с ним при первой тренировке.</p>
+      <div id="p-notes" hidden></div>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <img src="/assets/emblem.jpg" alt="Эмблема клуба ВЖУХ">
+      <span>ВЖУХ — беговой клуб · Москва</span>
+    </div>
+    <nav class="footer-links" aria-label="Ссылки в подвале">
+      <a href="/">Главная</a>
+      <a href="/knowledge.html">База знаний</a>
+      <a href="/ai-plan/">План подготовки</a>
+      <a href="/#contacts">Контакты</a>
+    </nav>
+    <span>© 2026 ВЖУХ</span>
+  </div>
+</footer>
+
+<style>
+  .hp-row { position: absolute; left: -9999px; height: 0; overflow: hidden; }
+  #plan-form select, #plan-form input[type="date"],
+  #plan-form input[type="number"], #plan-form input[type="text"] {
+    width: 100%; margin-bottom: 12px;
+  }
+  #plan-form label { margin-top: 10px; }
+  .day-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .day-pills .day-pill {
+    margin-top: 0; display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid #cfd6de; border-radius: 16px; padding: 4px 11px;
+    cursor: pointer; font-size: 14px;
+  }
+  .day-pills input[type="checkbox"] { width: auto !important; margin: 0 !important; }
+  /* ряды перерывов и промежуточных стартов */
+  .list-add { margin-bottom: 8px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
+  .brk-row, .race-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    margin-bottom: 8px; row-gap: 10px;
+  }
+  .brk-row input[type="date"], .race-row input[type="date"],
+  .race-row input { width: auto !important; margin-bottom: 0 !important; }
+  .brk-row input[type="date"] { min-width: 128px; }
+  .race-row input.race-km { width: 74px !important; }
+  .brk-sep { color: #7a828c; }
+  .brk-ease-l {
+    margin-top: 0 !important; display: inline-flex; align-items: center;
+    gap: 5px; font-size: 14px; cursor: pointer;
+  }
+  .brk-ease-l input[type="checkbox"] { width: auto !important; margin: 0 !important; }
+  .row-del {
+    border: 1px solid #cfd6de; background: #fff; color: #7a828c;
+    border-radius: 50%; width: 24px; height: 24px; line-height: 1;
+    cursor: pointer; font-size: 15px;
+  }
+  .row-del:hover { color: #b02a2a; border-color: #b02a2a; }
+  /* дисклеймеры после генерации: один стиль для обоих блоков,
+     отличный от обычного примечания формы */
+  #p-notes {
+    margin-top: 12px; padding: 10px 14px;
+    border: 1px solid #e0b4b4; border-left: 4px solid #b02a2a;
+    border-radius: 4px; background: #fff5f5; font-size: 15px;
+  }
+  #p-notes p { margin: 0 0 8px; }
+  #p-notes p:last-child { margin-bottom: 0; }
+</style>
+
+<script>
+/* План подготовки: форма → POST JSON на /ai-plan/plan.php → ссылка на xlsx.
+   Без сторонних библиотек, как остальные страницы клуба. */
+(function () {
+  var form = document.getElementById("plan-form");
+  var note = document.getElementById("p-note");
+  var submit = document.getElementById("p-submit");
+  var result = document.getElementById("p-result");
+  var download = document.getElementById("p-download");
+  var distSel = document.getElementById("f-distance");
+  var raceDate = document.getElementById("f-race-date");
+  var weeksRow = document.getElementById("f-weeks-row");
+  var weeksInp = document.getElementById("f-weeks");
+  var customRow = document.getElementById("f-custom-distance-row");
+  var startDate = document.getElementById("f-start-date");
+  var prefBoxes = document.querySelectorAll("#f-pref-days input[type=\"checkbox\"]");
+
+  /* ряды перерывов и промежуточных стартов: добавляются кнопкой,
+     работают даже если уже удалён первый ряд (шаблон строится заново) */
+  (function () {
+    var MAX_ROWS = 5;
+    function delWire(row) {
+      row.querySelector(".row-del").addEventListener("click", function () {
+        row.remove();
+      });
+    }
+    var boxBrk = document.getElementById("f-breaks");
+    var boxRace = document.getElementById("f-races");
+    document.getElementById("brk-add").addEventListener("click", function () {
+      if (boxBrk.querySelectorAll(".brk-row").length >= MAX_ROWS) { return; }
+      var row = document.createElement("div");
+      row.className = "brk-row";
+      row.innerHTML =
+        "<input type=\"date\" class=\"brk-start\" aria-label=\"Начало перерыва\">" +
+        "<span class=\"brk-sep\">—</span>" +
+        "<input type=\"date\" class=\"brk-end\" aria-label=\"Конец перерыва\">" +
+        "<label class=\"brk-ease-l\"><input type=\"checkbox\" class=\"brk-ease\">" +
+        "снизить нагрузку до и после</label>" +
+        "<button type=\"button\" class=\"row-del\" aria-label=\"Убрать перерыв\">×</button>";
+      delWire(row);
+      boxBrk.appendChild(row);
+    });
+    document.getElementById("race-add").addEventListener("click", function () {
+      if (boxRace.querySelectorAll(".race-row").length >= MAX_ROWS) { return; }
+      var row = document.createElement("div");
+      row.className = "race-row";
+      row.innerHTML =
+        "<input type=\"date\" class=\"race-date\" aria-label=\"Дата старта\">" +
+        "<input type=\"text\" class=\"race-km\" maxlength=\"6\" inputmode=\"decimal\" placeholder=\"км\">" +
+        "<button type=\"button\" class=\"row-del\" aria-label=\"Убрать старт\">×</button>";
+      delWire(row);
+      boxRace.appendChild(row);
+    });
+  })();
+
+  /* даты — не раньше сегодня */
+  (function () {
+    var today = new Date();
+    var mm = String(today.getMonth() + 1).padStart(2, "0");
+    var dd = String(today.getDate()).padStart(2, "0");
+    var iso = today.getFullYear() + "-" + mm + "-" + dd;
+    raceDate.min = iso;
+    startDate.min = iso;
+  })();
+
+  distSel.addEventListener("change", function () {
+    customRow.hidden = distSel.value !== "other";
+  });
+  /* дата старта известна → недели не спрашиваем */
+  raceDate.addEventListener("change", function () {
+    weeksRow.hidden = !!raceDate.value;
+  });
+  /* Pro — по паролю: поле пароля появляется только у «Pro» */
+  document.getElementById("f-model").addEventListener("change", function () {
+    document.getElementById("f-pro-pass").hidden = this.value !== "pro";
+  });
+
+  document.querySelector(".nav-toggle").addEventListener("click", function () {
+    var n = document.getElementById("site-nav");
+    var open = n.classList.toggle("open");
+    this.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+
+  var timeRe = /^\d{1,2}:[0-5]\d(:[0-5]\d)?$/;
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    note.textContent = "";
+    var d = distSel.value;
+    var km = form.km_per_week.value.trim();
+    var exp = form.experience.value;
+    var gender = form.gender.value;
+    var age = form.age.value.trim();
+    if (!d || !exp || km === "" || !gender || age === "") {
+      note.textContent = "Заполните обязательные поля (отмечены *).";
+      return;
+    }
+    if (d === "other" && !form.custom_distance.value.trim()) {
+      note.textContent = "Укажите вашу дистанцию (например, 8 или 25.5).";
+      return;
+    }
+    if (startDate.value && raceDate.value && startDate.value > raceDate.value) {
+      note.textContent = "Дата начала тренировок не может быть позже даты старта.";
+      return;
+    }
+    var target = form.target_time.value.trim();
+    if (target && !timeRe.test(target)) {
+      note.textContent = "Планируемый результат — в формате ЧЧ:ММ, например 1:45.";
+      return;
+    }
+    var paceAe = form.thr_ae_pace.value.trim();
+    var pacePano = form.thr_pano_pace.value.trim();
+    if ((paceAe && !timeRe.test(paceAe)) || (pacePano && !timeRe.test(pacePano))) {
+      note.textContent = "Темп заполните как ММ:СС на километр, например 5:20.";
+      return;
+    }
+    var prefDays = [];
+    prefBoxes.forEach(function (b) {
+      if (b.checked) { prefDays.push(b.value); }
+    });
+    var breaks = [];
+    document.querySelectorAll("#f-breaks .brk-row").forEach(function (row) {
+      var s = row.querySelector(".brk-start").value;
+      var e = row.querySelector(".brk-end").value;
+      if (s) {
+        breaks.push({ start: s, end: e && e > s ? e : s, ease: row.querySelector(".brk-ease").checked });
+      }
+    });
+    var midraces = [];
+    document.querySelectorAll("#f-races .race-row").forEach(function (row) {
+      var dt = row.querySelector(".race-date").value;
+      var kmS = row.querySelector(".race-km").value.trim().replace(",", ".");
+      var km = kmS === "" ? null : parseFloat(kmS);
+      if (dt && (km === null || !isNaN(km))) {
+        midraces.push({ date: dt, km: km === null ? "" : km });
+      }
+    });
+    var data = {
+      distance: d,
+      custom_distance: form.custom_distance.value.trim(),
+      target_time: target,
+      race_date: raceDate.value,
+      start_date: startDate.value,
+      weeks: weeksRow.hidden ? "" : weeksInp.value.trim(),
+      experience: exp,
+      km_per_week: km,
+      longest_run: form.longest_run.value.trim(),
+      days_per_week: form.days_per_week.value,
+      pref_days: prefDays.join(","),
+      place: form.place.value,
+      gender: gender,
+      age: age,
+      weight: form.weight.value.trim(),
+      injuries: form.injuries.value.trim(),
+      hr_watch: form.hr_watch.value,
+      thr_ae_hr: form.thr_ae_hr.value.trim(),
+      thr_ae_pace: paceAe,
+      thr_pano_hr: form.thr_pano_hr.value.trim(),
+      thr_pano_pace: pacePano,
+      breaks: breaks,
+      races: midraces,
+      model: form.model.value,
+      pro_pass: form.model.value === "pro" ? form.pro_pass.value : "",
+      website: form.website.value
+    };
+    submit.disabled = true;
+    startPlan(data);
+  });
+
+  /* идентификатор задачи создаёт БРАУЗЕР и шлёт вместе с данными:
+     даже если ответ сервера потеряется в дрогнувшей сети, страница
+     знает, какой именно план она попросила, и найдёт его опросом */
+  function jobId() {
+    var h = "0123456789abcdef", s = "", i;
+    for (i = 0; i < 16; i++) s += h[Math.floor(Math.random() * 16)];
+    return s;
+  }
+
+  var curData = null;
+  var reposted = false;
+
+  function startPlan(data) {
+    if (!data.job) { data.job = jobId(); }
+    curData = data;
+    reposted = false;
+    note.textContent = "Готовим план — это занимает 1–3 минуты. Не закрывайте страницу.";
+    sendPlan(data);
+  }
+
+  function sendPlan(data) {
+    fetch("plan.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    }).then(function (r) { return r.json(); }).then(function (r) {
+      if (r && r.ok && r.job) { poll(r.job, 0); }
+      else if (r && r.ok && r.url) { showResult(r.url, r.note1, r.note2); }
+      else { fail(humanError(r && r.error)); }
+    }).catch(function () {
+      /* ответ мог потеряться в дороге, хотя POST дошёл: сервер уже
+         готовит план — проверяем статус того же идентификатора */
+      note.textContent = "Связь дрогнула — проверяем, не готовится ли план…";
+      setTimeout(function () { poll(data.job, 0); }, 4000);
+    });
+  }
+
+  function poll(job, tick) {
+    if (tick > 400) {   /* ~20 минут — что-то совсем зависло */
+      fail("Модель долго не отвечает. Попробуйте ещё раз.");
+      return;
+    }
+    fetch("plan.php?job=" + job, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r && r.ok && r.url) { showResult(r.url, r.note1, r.note2); return; }
+        if (r && !r.ok && !r.wait) {
+          if (r.error === "gone" && !reposted && curData) {
+            /* файла статуса нет: POST так и не дошёл до сервера.
+               Одна тихая повторная отправка тех же данных (тот же job) */
+            reposted = true;
+            sendPlan(curData);
+            return;
+          }
+          fail(humanError(r.error));
+          return;
+        }
+        if (tick % 10 === 9) {
+          note.textContent = "Ещё минута–две. Не закрывайте страницу.";
+        }
+        setTimeout(function () { poll(job, tick + 1); }, 3000);
+      })
+      .catch(function () {
+        /* обрыв на одном опросе не страшен: следующий повторит */
+        setTimeout(function () { poll(job, tick + 1); }, 3000);
+      });
+  }
+
+  function fail(msg) {
+    note.textContent = msg;
+    submit.disabled = false;
+  }
+
+  function showResult(url, note1, note2) {
+    form.hidden = true;
+    result.hidden = false;
+    result.scrollIntoView({ behavior: "smooth", block: "start" });
+    download.href = url;
+    download.setAttribute("download", "plan-vzuh.xlsx");
+    renderNotes(note1, note2);
+  }
+
+  /* дисклеймеры с сервера: две группы строк, каждая — со своей строки;
+     слова «Дисклеймер» не выводим */
+  function renderNotes(note1, note2) {
+    var box = document.getElementById("p-notes");
+    note1 = note1 || [];
+    note2 = note2 || [];
+    if (!box || (!note1.length && !note2.length)) { return; }
+    box.innerHTML = "";
+    [note1, note2].forEach(function (lines) {
+      var p = document.createElement("p");
+      p.className = "plan-note";
+      lines.forEach(function (line, i) {
+        if (i) { p.appendChild(document.createElement("br")); }
+        p.appendChild(document.createTextNode(line));
+      });
+      box.appendChild(p);
+    });
+    box.hidden = false;
+  }
+
+  function humanError(code) {
+    switch (code) {
+      case "rate":     return "Слишком часто: с одного адреса можно составить 3 плана в час. Попробуйте позже.";
+      case "spam":     return "Похоже на робота — заявка отклонена.";
+      case "format":   return "Проверьте заполнение полей.";
+      case "bad_fields": return "Укажите пол и возраст — без них не рассчитать пульсовые зоны.";
+      case "bad_dates": return "Дата начала тренировок позже даты старта — проверьте даты.";
+      case "no_key":   return "Генератор ещё настраивается — ключ доступа не подключён. Напишите нам, если очень нужен план.";
+      case "ai_failed":return "Модель не ответила корректно. Попробуйте ещё раз — иногда помогает.";
+      case "ai_unavailable": return "Сервис генерации недоступен (нет связи с моделью). Попробуйте позже.";
+      case "busy":     return "Занято — попробуйте через минуту.";
+      case "gone":     return "Задача устарела — запустите генерацию ещё раз.";
+      case "pro_pass": return "Неверный пароль для модели Pro. Выберите Lite или введите пароль.";
+      default:         return "Что-то пошло не так. Попробуйте ещё раз; если не помогает — напишите нам в Telegram.";
+    }
+  }
+})();
+</script>
+</body>
+</html>

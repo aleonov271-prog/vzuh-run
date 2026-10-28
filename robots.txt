@@ -1,0 +1,11 @@
+User-agent: *
+Disallow: /editor.html
+Disallow: /kb-editor.html
+Disallow: /publish.php
+Disallow: /reviews.php
+Disallow: /kb.php
+Disallow: /_Ненужности/
+Disallow: /data/_backups/
+Disallow: /ai-plan/out/
+Disallow: /ai-plan/data/
+Sitemap: https://vzuh.run/sitemap.xml

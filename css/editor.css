@@ -1,0 +1,405 @@
+/* ============================================================
+   ВЖУХ — стили редактора расписания (editor.html)
+   ============================================================ */
+
+.editor-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.editor-instructions {
+  margin: 0 0 14px;
+  padding-left: 1.3em;
+  color: var(--c-muted);
+}
+.editor-instructions code {
+  background: var(--c-card);
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.85em;
+}
+.editor-tip {
+  color: var(--c-muted);
+  font-size: 0.9rem;
+  margin-bottom: 26px;
+}
+
+.editor-topfields {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+@media (min-width: 640px) {
+  .editor-topfields { grid-template-columns: 1fr 1fr; }
+}
+
+#days {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.editor-day {
+  background: var(--c-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+.ed-head {
+  display: grid;
+  gap: 10px;
+}
+@media (min-width: 640px) {
+  .ed-head { grid-template-columns: 1fr auto; align-items: end; }
+}
+
+.editor-day label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--c-muted);
+}
+.editor-day label small {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.editor-day input, .editor-day textarea {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 9px 12px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+.editor-day textarea { resize: vertical; }
+.editor-day input:focus-visible, .editor-day textarea:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+
+.editor-workout {
+  border: 1px solid var(--c-line);
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  background: var(--c-bg);
+}
+.ew-rows { display: grid; gap: 10px; }
+@media (min-width: 640px) { .ew-rows { grid-template-columns: 1fr 1fr; } }
+
+.ed-workouts { display: grid; gap: 12px; }
+
+.mini-btn {
+  justify-self: start;
+  border: 1px solid var(--c-line);
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--c-muted);
+  cursor: pointer;
+}
+.mini-btn:hover {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.btn-add-day { margin-top: 20px; }
+
+/* ============================================================
+   Публикация на сайт (publish.php)
+   ============================================================ */
+
+.publish-box {
+  margin-top: 28px;
+  background: var(--c-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+.publish-title {
+  margin: 0;
+  font-size: 1rem;
+}
+.publish-hint {
+  margin: 0;
+  color: var(--c-muted);
+  font-size: 0.85rem;
+}
+.publish-hint code {
+  background: var(--c-bg);
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.9em;
+}
+.publish-fields {
+  display: grid;
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .publish-fields { grid-template-columns: 1fr 1fr; }
+}
+.publish-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--c-muted);
+}
+.publish-fields input {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 9px 12px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+.publish-fields input:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+@media (max-width: 640px) {
+  .publish-fields input { font-size: 1rem; }
+}
+.publish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.publish-status {
+  color: var(--c-muted);
+  font-size: 0.85rem;
+  min-width: 0;
+}
+.publish-status.ok { color: #1a7f37; font-weight: 600; }
+.publish-status.err { color: #c0392b; font-weight: 600; }
+/* ============================================================
+   Мобильный комфорт редактора
+   ============================================================ */
+
+/* Поля «Подзаголовок/Примечание» — как в карточках */
+.editor-topfields label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--c-muted);
+}
+.editor-topfields input {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 9px 12px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  background: var(--c-card);
+  color: var(--c-text);
+}
+
+/* На телефонах поля не мельче 16px — иначе iOS при фокусе сам
+   приближает страницу (напрягает при вводе текста) */
+@media (max-width: 640px) {
+  .editor-topfields input,
+  .editor-day input,
+  .editor-day textarea { font-size: 1rem; }
+}
+
+/* ============================================================
+   Редактор базы знаний (kb-editor.html)
+   ============================================================ */
+
+.kb-status {
+  color: var(--c-muted);
+  font-size: 0.85rem;
+  margin-bottom: 14px;
+}
+
+.kb-layout { display: grid; gap: 20px; }
+@media (min-width: 960px) {
+  .kb-layout { grid-template-columns: 340px minmax(0, 1fr); align-items: start; }
+}
+
+.kb-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.kb-pane-head h3 { margin: 0; }
+
+.kb-group {
+  border: 1px solid var(--c-line);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: var(--c-card);
+  display: grid;
+  gap: 6px;
+}
+
+.kb-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kb-row .mini-btn {
+  justify-self: auto;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+.kb-title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--c-text);
+}
+.kb-title-input:focus {
+  border-color: var(--c-accent);
+  background: var(--c-bg);
+  outline: none;
+}
+.kb-topic-row { padding-left: 0; }
+.kb-cnt {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--c-muted);
+  background: var(--c-bg);
+  border: 1px solid var(--c-line);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.kb-row.kb-selected {
+  background: var(--c-bg);
+  outline: 2px solid var(--c-accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.kb-cards-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.kb-cards-title { margin: 0; font-size: 1.15rem; }
+.kb-cards-title small { color: var(--c-muted); font-weight: 500; }
+.kb-empty-topic { color: var(--c-muted); }
+
+.kb-card {
+  border: 1px solid var(--c-line);
+  border-radius: 12px;
+  background: var(--c-bg);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.kb-card summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.kb-card summary::-webkit-details-marker { display: none; }
+.kb-card summary:hover { background: var(--c-card); }
+.kc-title-preview {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kc-badge {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--c-muted);
+  border: 1px solid var(--c-line);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.kc-fields {
+  display: grid;
+  gap: 12px;
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--c-line);
+}
+.kc-rows { display: grid; gap: 10px; }
+@media (min-width: 640px) { .kc-rows { grid-template-columns: 1fr auto; } }
+.kc-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--c-muted);
+}
+.kc-fields input, .kc-fields textarea {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 9px 12px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  background: var(--c-card);
+  color: var(--c-text);
+}
+.kc-fields textarea { resize: vertical; }
+.kc-fields input:focus-visible, .kc-fields textarea:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+.kc-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) {
+  .kc-fields input, .kc-fields textarea { font-size: 1rem; }
+}
+
+.kb-paste {
+  margin-top: 26px;
+  background: var(--c-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+.kb-paste-text {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 10px 12px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  resize: vertical;
+}
+.kb-paste-text:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+.kb-paste-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}

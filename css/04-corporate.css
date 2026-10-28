@@ -1,0 +1,298 @@
+/* ============================================================
+   Макет 04 · «Дружелюбный корпоративный»
+   Светлые карточки, скругления, мягкие градиенты — для новичков
+   и любого возраста
+   ============================================================ */
+
+:root {
+  --c-bg: #fafafa;
+  --c-text: #1d1d1f;
+  --c-muted: #5f6164;
+  --c-accent: #e85d10;
+  --c-accent-2: #ffc400;
+  --c-card: #ffffff;
+  --c-line: #e8e8e8;
+
+  --font-head: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  --font-body: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+
+  --radius: 12px;
+  --radius-lg: 18px;
+  --shadow: 0 10px 30px rgba(29, 29, 31, 0.07);
+}
+
+h1, h2, h3 { letter-spacing: -0.01em; }
+
+/* Шапка: белая плашка с тенью */
+.v04 .site-header {
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: none;
+  box-shadow: 0 1px 12px rgba(0, 0, 0, 0.05);
+}
+.v04 .brand-logo { width: 48px; height: 48px; }
+.v04 .nav-toggle { border-radius: 999px; }
+
+/* Hero: приветствие крупно, мягкий фон-градиент */
+.v04 .hero {
+  background:
+    radial-gradient(600px 300px at 12% 0%, rgba(255, 196, 0, 0.14), transparent 70%),
+    radial-gradient(700px 340px at 95% 20%, rgba(232, 93, 16, 0.12), transparent 70%),
+    var(--c-bg);
+}
+.v04 .hero-media { box-shadow: var(--shadow); }
+
+/* Кнопки: пилюли */
+.v04 .btn { border-radius: 999px; box-shadow: var(--shadow); }
+.v04 .btn-ghost { box-shadow: none; color: var(--c-accent); border-color: currentColor; }
+
+/* Карточки: мягкие, с градиентными чипами */
+.v04 .card {
+  box-shadow: var(--shadow);
+  border-color: transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.v04 .card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px rgba(29, 29, 31, 0.1);
+}
+.v04 .chip-tag {
+  background: linear-gradient(90deg, #ffd54d, #ff8a3d);
+  color: #1d1d1f;
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+
+/* Знания и пульс: мягкие */
+.v04 .knowledge { box-shadow: var(--shadow); border-color: transparent; }
+.v04 .pz { color: #1d1d1f; }
+
+/* Отзывы: карточки-облачка */
+.v04 .review {
+  border-color: transparent;
+  box-shadow: var(--shadow);
+  border-left: 4px solid var(--c-accent-2);
+}
+.v04 .review footer { color: var(--c-accent); }
+
+/* Отзывы: горизонтальная лента.
+   flex: 1 0 … — карточки растягиваются, пока ряд помещается,
+   а при переполнении остаются на базовой ширине и открывается
+   горизонтальная прокрутка. */
+.reviews-strip {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: clamp(16px, 4vw, 32px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-line) transparent;
+  padding-bottom: 6px;
+}
+.reviews-strip::-webkit-scrollbar { height: 8px; }
+.reviews-strip::-webkit-scrollbar-thumb { background: var(--c-line); border-radius: 999px; }
+.reviews-strip .review {
+  flex: 1 0 min(320px, 78vw);
+  scroll-snap-align: start;
+}
+.v04 .review-form { box-shadow: var(--shadow); border-color: transparent; }
+.v04 .review-form input, .v04 .review-form textarea {
+  border-radius: 10px;
+  background: #f4f4f5;
+}
+.review-form-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+/* Форма: приятные поля */
+.v04 .demo-form { box-shadow: var(--shadow); border-color: transparent; }
+.v04 .demo-form input, .v04 .demo-form select {
+  border-radius: 10px;
+  background: #f4f4f5;
+  border-color: transparent;
+}
+.v04 .demo-form input:focus-visible, .v04 .demo-form select:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+
+/* Футер: мягкий */
+.v04 .site-footer { border-top: none; background: #f1f1f2; }
+
+/* ============================================================
+   Активное расписание недели: карточки дней, кликабельные
+   тренировки, модальное окно с описанием
+   ============================================================ */
+.week {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) { .week { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .week { grid-template-columns: repeat(3, 1fr); } }
+
+.day-card {
+  background: var(--c-card);
+  border-radius: var(--radius-lg);
+  padding: 18px 18px 20px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.day-card .day-date {
+  color: var(--c-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.day-card h3 { margin-bottom: 2px; }
+
+/* Тренировка — кнопка: показывает превью, по клику открывает модал */
+.workout {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--c-text);
+  background: var(--c-bg);
+  border: 1px solid var(--c-line);
+  border-radius: 12px;
+  padding: 11px 14px;
+  display: grid;
+  gap: 3px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.workout:hover {
+  border-color: var(--c-accent);
+  transform: translateY(-1px);
+}
+.workout strong { font-size: 0.95rem; }
+.workout small {
+  color: var(--c-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.workout::after {
+  content: "Описание \2192";
+  color: var(--c-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.day-rest {
+  color: var(--c-muted);
+  font-size: 0.9rem;
+  padding: 12px 14px;
+  border: 1px dashed var(--c-line);
+  border-radius: 12px;
+}
+
+/* Модальное окно описания тренировки */
+dialog.workout-dialog {
+  border: 1px solid var(--c-line);
+  background: var(--c-card);
+  color: var(--c-text);
+  border-radius: var(--radius-lg);
+  padding: 28px 30px 30px;
+  width: min(92vw, 480px);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.28);
+}
+dialog.workout-dialog::backdrop {
+  background: rgba(20, 20, 22, 0.55);
+}
+.workout-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.workout-dialog h3 {
+  font-size: 1.3rem;
+  line-height: 1.25;
+}
+.dialog-close {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--c-line);
+  border-radius: 50%;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.dialog-close:hover { border-color: var(--c-accent); color: var(--c-accent); }
+.workout-dialog .dialog-body { margin-top: 14px; color: var(--c-muted); }
+.workout-dialog .dialog-hint {
+  margin-top: 16px;
+  font-size: 0.85rem;
+  color: var(--c-muted);
+  border-top: 1px solid var(--c-line);
+  padding-top: 14px;
+}
+/* ============================================================
+   Фото тренировок: миниатюра на кнопке и фото в модальном окне
+   ============================================================ */
+.workout.has-thumb {
+  grid-template-columns: 46px 1fr;
+  column-gap: 12px;
+  align-items: center;
+}
+.workout-thumb {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.workout-text { display: grid; gap: 3px; }
+
+.dialog-media {
+  margin: 14px 0 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--c-bg);
+}
+.dialog-media img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  display: block;
+}
+
+/* ============================================================
+   Мобильный комфорт (вариант 4)
+   ============================================================ */
+
+/* Якоря с учётом высоты закреплённой шапки этого варианта */
+.v04 section[id] { scroll-margin-top: 92px; }
+
+/* Окно описания тренировки: целиком видно на телефоне,
+   длинные описания прокручиваются внутри окна */
+@media (max-width: 640px) {
+  dialog.workout-dialog {
+    padding: 20px 20px 24px;
+    max-height: 88vh;
+    max-height: 88dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dialog-media img { max-height: 200px; }
+}
+
+/* ============================================================
+   Список всех каналов клуба в контактах
+   ============================================================ */
+.contact-list a {
+  color: var(--c-accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.contact-list a:hover { text-decoration: underline; }
+.community { margin-top: 14px; align-content: start; }
+@media (min-width: 640px) {
+  .contact-list.community { grid-template-columns: 1fr 1fr; }
+}
