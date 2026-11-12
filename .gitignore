@@ -45,6 +45,13 @@ Thumbs.db
 *.log
 node_modules/
 __pycache__/
+# локальный портативный PHP (только для php -l / php -S, не часть сайта)
+tools/php/
+Work/php-download/
+# временный каталог функциональных тестов tools/selfcheck.py
+.tmp-selfcheck/
+# стенд регрессии публикации (создаётся тестом, не контент)
+Work/test-publish/
 # выход python-зеркала генератора (пример плана — не контент сайта)
 Work/plan_generator/output/
 # восстановление на хостинге: внутренние детали инфраструктуры
