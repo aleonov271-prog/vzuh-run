@@ -56,7 +56,10 @@ const GIGA_MODELS_URL = 'https://api.giga.chat/v1/models';
    russian_trusted_root_ca — смените на true. */
 const GIGA_INSECURE_TLS = true;
 
-const RATE_LIMIT = 3;
+/* Лимит частоты: 10 в час — ОТЛАДОЧНЫЙ режим (поднят на время отладки
+   генератора). Штатное значение для прода — 3, оно же указано в README
+   и в сводке ограничений: перед релизом вернуть 3. */
+const RATE_LIMIT = 10;
 const RATE_WINDOW = 3600;   /* за час */
 
 define('DIR_DATA', __DIR__ . '/data');
@@ -130,8 +133,13 @@ if (isset($in['website']) && trim((string)$in['website']) !== '') {
   respond(false, 'spam');
 }
 
-/* --- Выбор модели: Lite по умолчанию, Pro — по паролю ----------- */
-$modelOpt = (isset($in['model']) && $in['model'] === 'pro') ? 'pro' : 'lite';
+/* --- Выбор режима: Lite по умолчанию, Pro — по паролю, «Алгоритм» — без ИИ --- */
+$modelOpt = (isset($in['model']) && $in['model'] === 'pro') ? 'pro'
+  : ((isset($in['model']) && $in['model'] === 'algo') ? 'algo' : 'lite');
+/* algo — детерминированный генератор (Riegel + периодизация): без GigaChat,
+   без rate-limit, моментальный. ИИ-фазы ниже оборачиваются в if (!$algo) */
+$algo = ($modelOpt === 'algo');
+$modeLabel = $algo ? 'Алгоритм (без ИИ)' : '';
 $gigaModel = GIGA_MODEL;                       /* лёгкая — вся база */
 if ($modelOpt === 'pro') {
   if (!hash_equals(PRO_PASS, (string)($in['pro_pass'] ?? ''))) {
@@ -239,6 +247,26 @@ if ($targetTime !== '' && $dist > 0 &&
    Пульс порога ниже 100 не бывает физически — считаем «не указано»;
    темп принимаем в разумных пределах 2:00–15:00 на км */
 $paceRe = '/^(\d{1,2}):[0-5]\d(:[0-5]\d)?$/';
+
+/* недавний результат на старте (дистанция + время): для режима «Алгоритм»
+   обязателен — единственный корень расчёта темповых зон (формула Ригеля);
+   для ИИ-режимов — необязательный контекст в данных бегуна */
+$rrKm = 0.0;
+$rrTimeS = 0.0;
+if (isset($in['recent_race']) && is_array($in['recent_race'])) {
+  $rrKmRaw = str_replace(',', '.', (string)($in['recent_race']['km'] ?? ''));
+  if (is_numeric($rrKmRaw) && (float)$rrKmRaw >= 1 && (float)$rrKmRaw <= 300) {
+    $rrKm = (float)$rrKmRaw;
+  }
+  $rrTimeRaw = str_replace(' ', '', clean($in['recent_race']['time'] ?? '', 12));
+  if (preg_match($paceRe, $rrTimeRaw, $rrM)) {
+    $rrTimeS = (int)$rrM[1] * 60 + (int)$rrM[2] + (!empty($rrM[3]) ? (int)$rrM[3] : 0);
+  }
+}
+/* план новичка допустим и без недавнего результата (шаг 1 алгоритма):
+   темпы — словесно, в неделю 1 вписывается контрольный тест */
+$algoNoAnchor = ($algo && ($rrKm <= 0 || $rrTimeS <= 0));
+
 $thrAeHr = int_or($in['thr_ae_hr'] ?? 0, 0, 0, 230);
 $thrPanoHr = int_or($in['thr_pano_hr'] ?? 0, 0, 0, 230);
 $thrAeHr = $thrAeHr >= 100 ? $thrAeHr : 0;
@@ -323,7 +351,6 @@ $data = array(
   'place'        => array_key_exists('place', $in) ? clean($in['place'], 40) : '',
   'gender'       => $gender,
   'age'          => $age,
-  'weight'       => int_or($in['weight'] ?? 0, 0, 0, 300) ?: '',
   'injuries'     => isset($in['injuries']) ? clean($in['injuries'], MAX_TEXT) : '',
   'hr_watch'     => (($in['hr_watch'] ?? '') === 'no') ? 'нет' : 'есть',
   /* особые периоды — структурированные поля анкеты вместо разбора текста:
@@ -331,6 +358,16 @@ $data = array(
      их валидация и разметка недель — ниже, отдельным детерминированным блоком */
   'breaks'       => (isset($in['breaks']) && is_array($in['breaks'])) ? $in['breaks'] : array(),
   'races'        => (isset($in['races']) && is_array($in['races'])) ? $in['races'] : array(),
+  'recent_race'  => array(
+    'km'      => $rrKm,
+    'time_s'  => $rrTimeS,
+    'txt'     => ($rrKm > 0 && $rrTimeS > 0)
+      ? (($rrKm === (int)$rrKm ? (string)(int)$rrKm : (string)round($rrKm, 1)) . ' км за '
+         . ($rrTimeS >= 3600
+            ? ((int)floor($rrTimeS / 3600) . ':' . sprintf('%02d:%02d',
+                (int)floor($rrTimeS % 3600 / 60), $rrTimeS % 60))
+            : $fmtP($rrTimeS)))
+      : ''),
 );
 
 /* контроль числа тренировок: если дни заданы — их количество и есть
@@ -358,6 +395,26 @@ $trainDays = count($prefDays) > 0
   ? $prefDays
   : $defSets[max(1, min(7, $data['days_per_week']))];
 sort($trainDays);
+/* раскладка алгоритма рассчитана на 3-6 тренировок в неделю: 1-2 дня —
+   добираем из дефолтной тройки, 7 — оставляем первые 6 (для ИИ-режимов
+   число дней не трогаем) */
+$algoNotes = array();
+if ($algo) {
+  if (count($trainDays) < 3) {
+    foreach ($defSets[3] as $dA) {
+      if (count($trainDays) >= 3) { break; }
+      if (!in_array($dA, $trainDays, true)) { $trainDays[] = $dA; }
+    }
+    sort($trainDays);
+    $algoNotes[] = 'раскладка алгоритма рассчитана минимум на 3 тренировки '
+      . 'в неделю — добавлены дни ' . implode(', ', array_map(
+        function ($d) use ($wdNames) { return $wdNames[$d]; }, $trainDays));
+  } elseif (count($trainDays) > 6) {
+    $trainDays = array_slice($trainDays, 0, 6);
+    $algoNotes[] = 'раскладка алгоритма рассчитана максимум на 6 тренировок '
+      . 'в неделю — 7-й день отброшен';
+  }
+}
 $raceIso = 0;
 if ($raceDate !== '') {
   $raceIso0 = strtotime($raceDate);
@@ -376,28 +433,32 @@ ai_log('REQ', 'дист=' . $dist
   . ' пороги=' . ($thrAeHr || $thrPanoHr ? 'да' : 'нет')
   . ' км/нед=' . $km . ' дней/нед=' . $data['days_per_week']
   . ' дни=' . ($data['pref_days'] ?: $trainDaysTxt)
-  . ' модель=' . $gigaModel);
+  . ' модель=' . ($algo ? 'Алгоритм (без ИИ)' : $gigaModel));
 
 /* --- Лимит частоты (по образцу reviews.php) -------------------- */
+/* Лимит и ключ GigaChat — только для ИИ-режимов: алгоритм детерминирован,
+   не тратит токены и не ограничивается */
 if (!is_dir(DIR_DATA)) { @mkdir(DIR_DATA, 0755, true); }
-$salt = __FILE__ . '|' . php_uname();
-$ipHash = md5(($_SERVER['REMOTE_ADDR'] ?? '') . $salt);
-$rateFile = DIR_DATA . '/_rate-' . $ipHash . '.json';
-$now = time();
-$stamps = @json_decode(@file_get_contents($rateFile), true);
-if (!is_array($stamps)) { $stamps = array(); }
-$stamps = array_values(array_filter($stamps, function ($t) use ($now) {
-  return is_numeric($t) && ($now - (int)$t) < RATE_WINDOW;
-}));
-if (count($stamps) >= RATE_LIMIT) {
-  http_response_code(429);
-  respond(false, 'rate');
-}
-$stamps[] = $now;
-@file_put_contents($rateFile, json_encode($stamps), LOCK_EX);
+if (!$algo) {
+  $salt = __FILE__ . '|' . php_uname();
+  $ipHash = md5(($_SERVER['REMOTE_ADDR'] ?? '') . $salt);
+  $rateFile = DIR_DATA . '/_rate-' . $ipHash . '.json';
+  $now = time();
+  $stamps = @json_decode(@file_get_contents($rateFile), true);
+  if (!is_array($stamps)) { $stamps = array(); }
+  $stamps = array_values(array_filter($stamps, function ($t) use ($now) {
+    return is_numeric($t) && ($now - (int)$t) < RATE_WINDOW;
+  }));
+  if (count($stamps) >= RATE_LIMIT) {
+    http_response_code(429);
+    respond(false, 'rate');
+  }
+  $stamps[] = $now;
+  @file_put_contents($rateFile, json_encode($stamps), LOCK_EX);
 
-/* --- GigaChat: обмен ключа на временный токен ------------------- */
-if (GIGA_KEY === '') { http_response_code(503); respond(false, 'no_key'); }
+  /* --- GigaChat: обмен ключа на временный токен ----------------- */
+  if (GIGA_KEY === '') { http_response_code(503); respond(false, 'no_key'); }
+}
 
 /* --- Мгновенный ack: браузеру достаточно идентификатора задачи,
        генерация продолжается уже ПОСЛЕ ответа. Короткий запрос не рвёт
@@ -635,7 +696,6 @@ $u = array(
   'Место тренировок' => ($data['place'] ?: 'не указано'),
   'Пол' => $gender,
   'Возраст' => $age,
-  'Вес' => ($data['weight'] ? $data['weight'] . ' кг' : 'не указан'),
   'Травмы' => ($data['injuries'] ?: 'нет данных'),
   'Часы с пульсом' => $data['hr_watch'],
   'ЧССмакс (расчёт по возрасту)' => $hrMax,
@@ -645,6 +705,7 @@ $u = array(
     . 'з4: выше ' . $z3z4 . ', максимум ' . $hrMax,
   'Пороги' => implode(' ', $thrText),
   'Планируемый результат' => ($targetTime ?: 'не задан'),
+  'Недавний старт' => ($data['recent_race']['txt'] ?: 'нет данных'),
   'Целевой темп старта' => ($targetPace ?: 'не задан (результат не указан)'),
   'Таблица темпов (СТРОГО только эти темпы)' => $pacePlanTxt,
   'Дата старта' => ($raceDate ?: 'не определена'),
@@ -936,6 +997,13 @@ if ($startDate !== '') {
    из-за чего годовой план (49 недель) кончался в июле, а не у гонки */
 $nTotal = max(3, min(52, $nTotal));
 
+/* Режим «Алгоритм»: без даты гонки зональные недели не замкнуты — синтезируем
+   дату из «сколько недель до старта» (последний день последней недели) */
+if ($algo && $raceDate === '') {
+  $raceTs = $startTs0 + ($nTotal * 7 - 1) * 86400;
+  $raceDate = date('Y-m-d', $raceTs);
+}
+
 /* --- Разметка недель: с понедельника ---------------------------- */
 /* первая неделя начинается с выбранной даты старта (может быть
    неполной), далее недели строго с понедельника; при заданной дате
@@ -1171,7 +1239,10 @@ foreach ($specialWeeks as $wiX => $kinds) {
 
 /* --- ФАЗА 1: модель пишет только оценку, зоны и советы --------- */
 /* Календарь/объёмы/фазы готовы — модель не может их сломать, и никакой
-   «скелет на 40 недель» больше не гоняется через токены. */
+   «скелет на 40 недель» больше не гоняется через токены.
+   В режиме «Алгоритм» фаза пропускается: всё то же — с сервера. */
+$planMeta = null;
+if (!$algo) {
 $skeletonPayload = array(
   'model' => $gigaModel,
   'messages' => array(
@@ -1203,6 +1274,7 @@ for ($skAtt = 0; $skAtt < 2 && !$planMeta; $skAtt++) {
     sleep(1);
   }
 }
+} /* конец ИИ-фазы 1 */
 /* даже если модель не ответила — план всё равно собирается: фазы,
    объёмы, темпы и зоны на сервере; дефолтные тексты честные */
 $plan = array('weeks' => $detWk);
@@ -1232,6 +1304,67 @@ $plan['advice'] = (!empty($planMeta['advice'] ?? null) && is_array($planMeta['ad
       . 'в неделю, без ударной нагрузки на ноги; в план они не входят.',
     'Кросс или плавание вместо бегового дня при усталости / плохой погоде.',
   );
+
+/* --- Режим «Алгоритм»: оценка, зоны, советы — детерминированно --- */
+if ($algoNoAnchor) {
+  /* новичок без недавнего результата: темпы словесные, зоны пульса — по
+     возрасту, якорь для пересчёта набирается контрольным тестом недели 1 */
+  $algoZonesP = null;
+  $algoRZone = 'T';
+  $plan['summary'] = 'План построен без недавнего результата: объёмы и фазы'
+    . ' рассчитаны сервером, темпы — словесно (по усилию и пульсу). В первые'
+    . ' 2 недели вписан контрольный тест 5К (или 30 мин на максимум): после'
+    . ' него повторите генерацию с результатом теста в поле «Недавний'
+    . ' старт» — план пересчитается с точными темпами.';
+  /* лист «Зоны и советы»: числовых зон Ригеля нет — словесные строки */
+  $plan['zones'] = array();
+  $plan['advice'] = array(
+    'В первые 2 недели в плане — контрольный тест 5К с усилием'
+      . ' (или бег 30 минут на максимум времени): это замена недавнего старта.',
+    'После теста сгенерируйте план повторно, указав результат теста в поле'
+      . ' «Недавний старт» — все темпы пересчитаются точными цифрами.',
+    'До точных темпов: лёгкий бег «на разговор», качественные — «комфортно-'
+      . 'тяжело», интервалы/ускорения — коротко и не в полный отказ.',
+    'Лёгкие дни — действительно легко: объём важнее скорости.',
+    'Разминка и заминка до каждой качественной; страйды — после лёгких.',
+    'Сон 7-8 часов; пульс покоя выше нормы — день отдыха вместо бега.',
+    'Силовая, ОФП, растяжка и СБУ — отдельно от плана, в дни отдыха.',
+  );
+} else {
+  $algoZonesP = algo_zones($rrKm, $rrTimeS);          /* E/M/T/I/R, сек/км */
+  $algoRZone = ($dist >= 40) ? 'M' : (($dist >= 20) ? 'T' : 'I');
+  $algoFcS = algo_riegel($rrTimeS, $rrKm, $dist);     /* прогноз на дистанцию цели */
+  $algoFcTxt = $algoFcS >= 3600
+    ? sprintf('%d:%02d:%02d', (int)floor($algoFcS / 3600),
+        (int)floor($algoFcS % 3600 / 60), (int)($algoFcS % 60))
+    : algo_fmt_pace($algoFcS);
+  $plan['summary'] = 'Прогноз по недавнему результату ('
+    . ($data['recent_race']['txt'] ?: '—') . '): ~' . $algoFcTxt . ' на '
+    . $dist . ' км. Фазы и объёмы рассчитаны сервером (рост ≤10% в неделю,'
+    . ' разгрузочная каждая 4-я, тэйпер), темповые зоны — по формуле Ригеля,'
+    . ' содержание недель — по алгоритму подготовки: база → конструкция'
+    . ' → специализация → подводка.';
+  /* лист «Зоны и советы» в этом режиме строится напрямую от $algoZonesP */
+  $plan['zones'] = array();
+  $plan['advice'] = array(
+    'Зоны рассчитаны по формуле Ригеля от недавнего результата: после нового'
+      . ' контрольного старта пересчитайте их (можно повторной генерацией).',
+    'Лёгкие дни — действительно легко (разговорный темп): объём важнее скорости.',
+    'Разминка и заминка до каждой качественной; страйды — после лёгких.',
+    'Питание и питьё на длинных — репетировать заранее.',
+    'Сон 7-8 часов; пульс покоя выше нормы — день отдыха вместо бега.',
+    'Силовая, ОФП, растяжка и СБУ — отдельно от плана, в дни отдыха.',
+  );
+  if ($targetTime !== ''
+      && preg_match('/^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/', $targetTime, $ttM)) {
+    $ttS = ((int)$ttM[1] * 60 + (int)$ttM[2]) * 60 + (!empty($ttM[3]) ? (int)$ttM[3] : 0);
+    if ($ttS > 0 && $ttS < 0.95 * $algoFcS) {
+      $algoNotes[] = 'цель (' . $targetTime . ') быстрее прогноза по текущей'
+        . ' форме (' . $algoFcTxt . ') — реалистичность цели проверьте'
+        . ' на контрольном старте 5-10 км';
+    }
+  }
+}
 
 /* --- Даты всех стартов: промежуточные + целевая ---------------- */
 /* в эти дни план покажет сам старт, а не произвольную тренировку */
@@ -1309,7 +1442,545 @@ for ($i = 0; $i < $cntW; $i++) {
   $wk[$i]['_cal'] = $cal;
 }
 
+/* ================================================================
+   РЕЖИМ «АЛГОРИТМ (без ИИ)» — порт Work/plan_generator
+   anketa → темповые зоны по Ригелю от недавнего результата → пул
+   сессий по фазе × дистанции → раскладка недели. Календарь, фазы,
+   объёмы, старты и перерывы — общие серверные ($wk/$detWk); алгоритм
+   ставит содержание дней вместо модели. Слои ИИ-сшивки (D FIX и пр.)
+   сюда не переносятся: алгоритм детерминирован сам.
+   ================================================================ */
+
+/* Темп сек/км → 'M:SS' */
+function algo_fmt_pace($s) {
+  $s = (int)round((float)$s);
+  $m = (int)floor($s / 60);
+  $ss = $s % 60;
+  if ($ss === 60) { $m++; $ss = 0; }
+  return $m . ':' . sprintf('%02d', $ss);
+}
+/* Прогноз по формуле Ригеля: время tS (сек) на dFrom км → на dTo км */
+function algo_riegel($tS, $dFrom, $dTo, $exp = 1.06) {
+  return $tS * pow($dTo / $dFrom, $exp);
+}
+/* Темповые зоны E/M/T/I/R от недавнего результата (zones.py):
+   E = МП+60..90 с/км, M = МП, T = прогноз 10К+12, I = прогноз 3К,
+   R = прогноз 1500 м. Возвращает список сек/км. */
+function algo_zones($rrKm, $rrTimeS) {
+  $mp  = algo_riegel($rrTimeS, $rrKm, 42.195) / 42.195;
+  $p10 = algo_riegel($rrTimeS, $rrKm, 10.0) / 10.0;
+  $p3  = algo_riegel($rrTimeS, $rrKm, 3.0, 1.08) / 3.0;
+  $p15 = algo_riegel($rrTimeS, $rrKm, 1.5, 1.10) / 1.5;
+  return array(
+    array('code' => 'E', 'name' => 'лёгкий', 'pace' => $mp + 60, 'range_to' => $mp + 90),
+    array('code' => 'M', 'name' => 'целевой темп старта', 'pace' => $mp, 'range_to' => $mp),
+    array('code' => 'T', 'name' => 'порог', 'pace' => $p10 + 12, 'range_to' => $p10 + 12),
+    array('code' => 'I', 'name' => 'интервалы (VO2max)', 'pace' => $p3, 'range_to' => $p3),
+    array('code' => 'R', 'name' => 'скорость (повторения)', 'pace' => $p15, 'range_to' => $p15),
+  );
+}
+/* Дистанция цели → ключ пула сессий; 15К и кастом — к ближайшей из 5/10/21,1/42,2 */
+function algo_dist_key_of($km) {
+  $table = array(
+    array('10k', 10.0), array('5k', 5.0), array('half', 21.1), array('marathon', 42.2),
+  );
+  foreach ($table as $t) { if (abs($km - $t[1]) < 1.0) { return $t[0]; } }
+  $best = '10k'; $bd = PHP_INT_MAX;
+  foreach ($table as $t) {
+    $d = abs($t[1] - $km);
+    if ($d < $bd) { $bd = $d; $best = $t[0]; }
+  }
+  return $best;
+}
+/* Пик лонга и тапер-доли лонга по дистанции (volume.py) */
+function algo_long_peak($key) {
+  $peaks = array('5k' => 12, '10k' => 16, 'half' => 20, 'marathon' => 33);
+  return $peaks[$key];
+}
+function algo_taper_long_fr($key) {
+  $fr = array('5k' => array(0.45), '10k' => array(0.70, 0.45),
+    'half' => array(0.70, 0.45), 'marathon' => array(0.75, 0.55, 0.40));
+  return $fr[$key];
+}
+/* Пул качественных сессий: фаза × дистанция (sessions.py).
+   Возвращает список ['type' (код клуба), 'zone', 'workout', 'est_km'];
+   {E}{M}{T}{I}{R}{race} в тексте подставляются темпами из зон. */
+function algo_quality_pool($ph, $key) {
+  if ($ph === 'base' || $ph === 'recovery') {
+    return array(
+      array('type' => 'Ф', 'zone' => 'E', 'est_km' => 8,
+        'workout' => 'Фартлек E: 8×1 мин быстро / 2 мин лёгкий джог, всего ~8 км'),
+      array('type' => 'Ф', 'zone' => 'E', 'est_km' => 6,
+        'workout' => 'Лёгкий бег 6 км + страйды 6×20 сек'),
+    );
+  }
+  if ($ph === 'taper') {
+    $op = array(
+      '5k' => array('type' => 'И', 'zone' => 'I', 'est_km' => 7,
+        'workout' => 'Открывашка: 3×1000 в гоночном темпе ({I}/км), отдых 400 м джог'),
+      '10k' => array('type' => 'И', 'zone' => 'I', 'est_km' => 8,
+        'workout' => 'Открывашка: 5К в целевом темпе ({race}/км)'),
+      'half' => array('type' => 'П', 'zone' => 'T', 'est_km' => 9,
+        'workout' => 'Открывашка: 2×3К в темпе цели ({race}/км), отдых 4 мин'),
+      'marathon' => array('type' => 'ЦМТ', 'zone' => 'M', 'est_km' => 7,
+        'workout' => 'Открывашка: 3К в целевом темпе ({M}/км) + 2К лёгкий'),
+    );
+    return array($op[$key]);
+  }
+  $pool = array(
+    'build1' => array(
+      '5k' => array(
+        array('type' => 'И', 'zone' => 'I', 'est_km' => 10,
+          'workout' => 'Интервалы I: 5×1000 в {I}/км, отдых 2-3 мин лёгкого'),
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 9,
+          'workout' => 'Темпо T: 2×15 мин в {T}/км (отдых 3 мин)'),
+      ),
+      '10k' => array(
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 12,
+          'workout' => 'Темпо T: 2×20 мин в {T}/км (отдых 3 мин)'),
+        array('type' => 'И', 'zone' => 'I', 'est_km' => 10,
+          'workout' => 'Интервалы I: 6×1000 в {I}/км, отдых 400 м джог'),
+      ),
+      'half' => array(
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 14,
+          'workout' => 'Темпо T: 40-50 мин в {T}/км (или 3×15 мин)'),
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 12,
+          'workout' => 'Темпо-прогрессия: 25 мин ровно + 15 мин в {T}/км'),
+      ),
+      'marathon' => array(
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 13,
+          'workout' => 'Темпо T: 45 мин в {T}/км (или 3×15 мин)'),
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 12,
+          'workout' => 'Круиз-интервалы T: 2×20 мин в {T}/км (отдых 3 мин)'),
+      ),
+    ),
+    'build2' => array(
+      '5k' => array(
+        array('type' => 'И', 'zone' => 'I', 'est_km' => 11,
+          'workout' => 'Интервалы I: 6-8×800 в {I}/км, отдых 2 мин'),
+        array('type' => 'И', 'zone' => 'R', 'est_km' => 8,
+          'workout' => 'Повторения R: 8×400 в {R}/км, отдых 400 м джог'),
+        array('type' => 'И', 'zone' => 'I', 'est_km' => 8,
+          'workout' => 'Репетиция гонки: 3К в целевом темпе ({race}/км)'),
+      ),
+      '10k' => array(
+        array('type' => 'И', 'zone' => 'I', 'est_km' => 13,
+          'workout' => 'Интервалы I: 5×1600 в {I}/км, отдых 2-3 мин'),
+        array('type' => 'И', 'zone' => 'I', 'est_km' => 12,
+          'workout' => 'Связки: 2×(3К в {I}/км + 1К в {T}/км)'),
+        array('type' => 'И', 'zone' => 'I', 'est_km' => 10,
+          'workout' => 'Репетиция гонки: 5К в целевом темпе ({race}/км)'),
+      ),
+      'half' => array(
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 15,
+          'workout' => 'ТР-связки: 2×5К в темпе цели ({race}/км), отдых 4 мин'),
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 14,
+          'workout' => 'Репетиция гонки: 10К в целевом темпе ({race}/км)'),
+      ),
+      'marathon' => array(
+        array('type' => 'ЦМТ', 'zone' => 'M', 'est_km' => 18,
+          'workout' => 'Связка: 3К в {T}/км → 5К лёгкий → 8К в целевом темпе ({M}/км)'),
+        array('type' => 'П', 'zone' => 'T', 'est_km' => 11,
+          'workout' => 'Темпо T: 40 мин в {T}/км'),
+      ),
+    ),
+  );
+  return $pool[$ph][$key];
+}
+/* Описание лонга по фазе × дистанции (sessions.py LONG_OVERRIDE) */
+function algo_long_text($ph, $key, $km, $pt, $noAnchor = false) {
+  $def = 'Длительный бег {km} км в зоне E ({E}/км)';
+  $ov = array(
+    'build1|half' => 'Длительный {km} км (E), финальные 20 мин в {T}/км',
+    'build1|marathon' => 'Длительный {km} км, из них 8-12К в темпе целевого старта ({M}/км)',
+    'build2|half' => 'Длительный {km} км с блоком 6-8К в темпе цели ({T}/км)',
+    'build2|marathon' => 'Длительный {km} км, из них 10-15К в темпе целевого старта ({M}/км)',
+  );
+  $tpl = isset($ov[$ph . '|' . $key]) ? $ov[$ph . '|' . $key] : $def;
+  return str_replace('{km}', (string)$km,
+    $noAnchor ? algo_verbal_txt($tpl, $pt) : strtr($tpl, $pt));
+}
+
+/* «X/км» → «X»: у словесных темпов суффикс «/км» не нужен */
+function algo_verbal_txt($txt, $pt) {
+  return strtr(str_replace(
+    array('{E}/км', '{T}/км', '{M}/км', '{I}/км', '{R}/км', '{race}/км'),
+    array('{E}', '{T}', '{M}', '{I}', '{R}', '{race}'),
+    $txt), $pt);
+}
+
+/* --- Сборка недель алгоритмом: слоты вместо модели ------------- */
+function algo_build_plan(
+  $wk, $specialWeeks, $recWeekN, $raceOut, $raceEve, $raceQuiet, $raceRest,
+  $raceKmByDate, $raceDateTs, $raceDateStr, $trainDays, $kmAnketa,
+  $dist, $pt, $raceZoneCode, &$algoNotes, $noAnchor = false
+) {
+  $key = algo_dist_key_of($dist);
+  $peakLong = algo_long_peak($key);
+  $nBuild = 0;
+  foreach ($wk as $w) {
+    if (in_array($w['period'], array('База I', 'База II', 'Специальная'), true)) { $nBuild++; }
+  }
+  /* тапер-недели без самой стартовой недели: им достаются доли пика лонга */
+  $tiperList = array();
+  foreach ($wk as $w) {
+    if ($w['period'] === 'Подводка'
+        && !($raceDateTs !== false && $w['_cal'][0]['date'] !== ''
+          && strtotime($w['start']) <= $raceDateTs
+          && strtotime($w['start']) + 7 * 86400 > $raceDateTs)) {
+      $tiperList[] = $w['n'];
+    }
+  }
+  $fracsAll = array(1 => array(0.45), 2 => array(0.70, 0.45), 3 => array(0.75, 0.55, 0.40));
+  $fracs = $fracsAll[max(1, min(3, count($tiperList)))];
+
+  $weeksOut = array();
+  $longPrev = 0.0;
+  $buildDone = 0;
+  $tapDone = 0;
+  $cntLong = 0;   /* недель с лонгом >35% объёма (после потолка) */
+  $cntIr = 0;     /* недель с долей I/R >25% объёма */
+  foreach ($wk as $w) {
+    $calN = count($w['_cal']);
+    $kW = isset($specialWeeks[$w['n']]) ? $specialWeeks[$w['n']] : array();
+    $isVacWk = in_array('vacation', $kW, true);
+    $isRecWk = ($recWeekN > 0 && $w['n'] === $recWeekN);
+    $isRaceWk = $raceDateTs !== false
+      && strtotime($w['start']) <= $raceDateTs
+      && strtotime($w['start']) + 7 * 86400 > $raceDateTs;
+    $ph = 'base';
+    switch ($w['period']) {
+      case 'Восстановление': $ph = 'recovery'; break;
+      case 'База I': $ph = 'base'; break;
+      case 'База II': $ph = 'build1'; break;
+      case 'Специальная': $ph = 'build2'; break;
+      case 'Подводка': $ph = 'taper'; break;
+    }
+    $isDeload = (strpos((string)$w['focus'], 'разгрузочная') === 0);
+    $vol = (float)$w['volume_km'];
+    $buildPh = in_array($ph, array('base', 'build1', 'build2'), true) && !$isDeload;
+
+    /* --- 1. Пины: отдых перерывов/рек-недели, старты и окрестности --- */
+    $daysOut = array();
+    $pinned = array();
+    $slotDays = array();   /* ISO дня => индекс календаря */
+    foreach ($w['_cal'] as $j => $c) {
+      $dIso = (int)date('N', strtotime($c['date']));
+      if ($isRecWk || $isVacWk) {
+        $daysOut[$j] = array(
+          'day' => $c['day'], 'date' => $c['date'], 'type' => 'отдых',
+          'workout' => '', 'distance_km' => '', 'intensity' => '',
+          'comment' => $isRecWk ? 'неделя отдыха после целевого старта'
+            : 'перерыв в тренировках',
+        );
+        $pinned[$j] = true;
+        continue;
+      }
+      if (isset($raceOut[$c['date']])) {
+        $pinned[$j] = true;
+        $rKmOut = isset($raceKmByDate[$c['date']])
+          ? (fmod((float)$raceKmByDate[$c['date']], 1.0) === 0.0
+            ? (int)$raceKmByDate[$c['date']] : round((float)$raceKmByDate[$c['date']], 1))
+          : '';
+        $daysOut[$j] = array(
+          'day' => $c['day'], 'date' => $c['date'], 'type' => 'Д',
+          'workout' => 'СТАРТ: ' . $raceOut[$c['date']],
+          'distance_km' => $rKmOut,
+          'intensity' => ($w['period'] === 'Подводка' && strpos($raceOut[$c['date']], 'Целевой') === 0)
+            ? 'целевой темп' . ($pt['race'] !== '' ? ' ' . $pt['race'] : '')
+            : 'контрольный темп',
+          'comment' => 'ровный консервативный старт: первые километры чуть'
+            . ' медленнее целевого темпа, разминка отдельной лёгкой пробежкой',
+        );
+        continue;
+      }
+      if (isset($raceQuiet[$c['date']]) && $c['train']) {
+        $pinned[$j] = true;
+        $daysOut[$j] = array(
+          'day' => $c['day'], 'date' => $c['date'], 'type' => 'ВОС',
+          'workout' => 'лёгкий бег — разгрузка перед стартом', 'distance_km' => 6,
+          'intensity' => 'зона 1',
+          'comment' => 'за 2-3 дня до старта (' . $raceQuiet[$c['date']]
+            . '): только лёгкий, ни длинного, ни интенсивного',
+        );
+        continue;
+      }
+      if (isset($raceEve[$c['date']]) && $c['train']) {
+        $pinned[$j] = true;
+        $daysOut[$j] = array(
+          'day' => $c['day'], 'date' => $c['date'], 'type' => 'ВОС',
+          'workout' => 'лёгкая закрутка перед стартом', 'distance_km' => 3,
+          'intensity' => 'зона 1',
+          'comment' => 'накануне старта (' . $raceEve[$c['date']]
+            . '): никакого длинного и интенсивного',
+        );
+        continue;
+      }
+      if (isset($raceRest[$c['date']])) {
+        $pinned[$j] = true;
+        $daysOut[$j] = array(
+          'day' => $c['day'], 'date' => $c['date'], 'type' => 'отдых',
+          'workout' => '', 'distance_km' => '', 'intensity' => '',
+          'comment' => 'восстановление после старта (' . $raceRest[$c['date']] . ')',
+        );
+        continue;
+      }
+      if ($c['train']) { $slotDays[$dIso] = $j; }
+    }
+
+    /* --- 2. Слоты: лонг → качественные → easy-добор --------------- */
+    $nSlots = count($slotDays);
+    $nQual = ($nSlots <= 4 || $ph === 'taper' || $ph === 'recovery' || $isDeload)
+      ? 1 : 2;
+    if (isset($algoLongKm)) { unset($algoLongKm); }
+    if (!$isRecWk && !$isVacWk && $nSlots > 0) {
+      $slotIsos = array_keys($slotDays);
+      sort($slotIsos);
+      /* в разгрузочной неделе (−30% объёма) — базовый пул intensity:
+         «связка 18 км» в неделю срезки объёма не ставится */
+      $pool = algo_quality_pool($isDeload ? 'base' : $ph, $key);
+      /* план новичка без якоря: в первой неделе качественный слот —
+         контрольный тест (шаг 1 алгоритма), из него потом считаются зоны */
+      $algotest = $noAnchor && $w['n'] === 1 && !$isDeload;
+      if ($algotest) {
+        $pool = array(array('type' => 'ЦМТ', 'zone' => 'M', 'est_km' => 8,
+          'workout' => 'Контрольный тест: 5К с усилием (или бег 30 мин на'
+            . ' максимум времени) — опора для пересчёта всех темпов'));
+        $nQual = min(1, $nQual);
+      }
+      if ($isRaceWk) {
+        /* стартовая неделя: лонг-слот уже занят пином СТАРТ; лёгкие слоты */
+        $nQual = min(1, max(0, $nSlots - 1));
+        $easyKm = max(2, min(14, (int)round(($vol - 15) / max(1, $nSlots - 1 - $nQual))));
+        $qi = 0;
+        foreach ($slotIsos as $iso) {
+          $j = $slotDays[$iso];
+          if ($qi < $nQual) {
+            $s = $pool[0];
+            $daysOut[$j] = array(
+              'day' => $w['_cal'][$j]['day'], 'date' => $w['_cal'][$j]['date'],
+              'type' => $s['type'],
+              'workout' => $noAnchor
+                ? algo_verbal_txt(str_replace('{km}', '5', $s['workout']), $pt)
+                : strtr(str_replace('{km}', '5', $s['workout']), $pt),
+              'distance_km' => min($s['est_km'], 5),
+              'intensity' => ($s['zone'] === 'I' || $s['zone'] === 'R')
+                ? 'зона 4' : 'зона 3',
+              'comment' => 'открывающая лёгкая перед стартом',
+            );
+            $qi++;
+          } else {
+            $daysOut[$j] = array(
+              'day' => $w['_cal'][$j]['day'], 'date' => $w['_cal'][$j]['date'],
+              'type' => 'ВОС', 'workout' => 'Лёгкий бег ' . $easyKm . ' км',
+              'distance_km' => $easyKm, 'intensity' => 'зона 1',
+              'comment' => 'очень легко, за ' . (int)round((strtotime($raceDateStr)
+                - strtotime($w['_cal'][$j]['date'])) / 86400) . ' дн до старта',
+            );
+          }
+        }
+        $weeksOut[] = array(
+          'n' => $w['n'], 'start' => $w['start'], 'period' => $w['period'],
+          'volume_km' => $w['volume_km'], 'focus' => $w['focus'],
+          'days' => $daysOut,
+        );
+        continue;
+      }
+      /* лонг — в последний тренировочный день; качественные — с зазором
+         ≥ 48 ч от лонга и друг от друга, ближе к (лонг − 3 дня) */
+      $longIso = $slotIsos[count($slotIsos) - 1];
+      $longJ = $slotDays[$longIso];
+      /* кривая лонга: рост по строительным неделям, тапер — доли пика */
+      if ($ph === 'taper') {
+        $frac = $tapDone < count($fracs) ? $fracs[$tapDone] : 0.45;
+        $algoLongKm = max(6, (int)round($peakLong * $frac));
+        $tapDone++;
+      } elseif ($buildPh) {
+        $t = $nBuild > 1 ? ($buildDone / ($nBuild - 1)) : 0;
+        $lg = max(8.0, 0.30 * max(1.0, (float)$kmAnketa))
+          + $t * ($peakLong - max(8.0, 0.30 * max(1.0, (float)$kmAnketa)));
+        $algoLongKm = (int)round($lg);
+        $buildDone++;
+      } else {   /* recovery / deload: держим прошлый уровень */
+        $algoLongKm = $longPrev > 0 ? (int)round($longPrev) : max(6, (int)round(0.3 * (float)$kmAnketa));
+      }
+      /* ограничитель лонга: ≤35% недельного объёма во ВСЕХ неделях —
+         в разгрузочные и подводные недели режется сам лонг */
+      if ($vol > 0.001) { $algoLongKm = min($algoLongKm, (int)floor(0.35 * $vol)); }
+      $algoLongKm = max(4, min($algoLongKm, (int)$vol));
+      $longPrev = $algoLongKm;
+      if ($vol > 0 && $algoLongKm > 0.37 * $vol) { $cntLong++; }
+      /* качественный пул и выбор дней */
+      $cand = array_values(array_filter($slotIsos, function ($iso) use ($longIso) {
+        return abs($iso - $longIso) >= 2;
+      }));
+      usort($cand, function ($a, $b) use ($longIso) {
+        return abs($a - ($longIso - 3)) <=> abs($b - ($longIso - 3));
+      });
+      $qualIso = $nQual > 0 && count($cand) > 0 ? $cand[0] : -1;
+      $qualIso2 = -1;
+      if ($nQual > 1) {
+        foreach ($cand as $c2) {
+          if ($qualIso >= 0 && abs($c2 - $qualIso) >= 2 && $c2 !== $longIso) {
+            $qualIso2 = $c2;
+            break;
+          }
+          $qualIso2 = -1;
+        }
+      } else { $qualIso2 = -1; }
+      if ($qualIso < 0 && $nQual > 0 && count($cand) === 0 && count($slotIsos) > 1) {
+        /* зазора нет: берём самый дальний от лонга с замечанием */
+        $qualIso = $slotIsos[0];
+        $algoNotes[] = 'неделя ' . $w['n'] . ': качественная ближе 48 ч к лонгу '
+          . '— при усталости замените её лёгким бегом';
+      }
+      /* --- 3. Наполнение слотов ------------------------------------- */
+      /* Пул качественных обязан учитывать контрольный тест новичка:
+         раньше он пересобирался здесь заново, и подменённый выше $pool
+         (неделя 1 без якоря) в план не попадал — тест обещался в
+         сводке и советах, но в тренировках его не было. */
+      $qualPool = $algotest
+        ? $pool
+        : algo_quality_pool($isDeload ? 'base' : $ph, $key);
+      /* порядок качественных: первый день — первая сессия пула,
+         второй день — вторая */
+      $qualMap = array();
+      if ($qualIso >= 0) { $qualMap[(int)$qualIso] = 0; }
+      if ($qualIso2 >= 0) { $qualMap[(int)$qualIso2] = 1; }
+      $qualEst = 0;
+      foreach ($qualMap as $qi2) {
+        $qualEst += $qualPool[min($qi2, count($qualPool) - 1)]['est_km'];
+      }
+      $easyIsos = array();
+      foreach ($slotIsos as $iso) {
+        if ((int)$iso === (int)$longIso || isset($qualMap[(int)$iso])) { continue; }
+        $easyIsos[] = $iso;
+      }
+      $easyKm = max(2, min(14, (int)round(($vol - $algoLongKm - $qualEst)
+        / max(1, count($easyIsos)))));
+      /* добор недобора объёма: при 3 тренировках и большом плане easy-дней
+         может не быть вовсе (или они у потолка 14 км) — остаток уходит
+         в лонг до 45% объёма; если и это не помогло — честное примечание */
+      $deficit = $vol - $algoLongKm - $qualEst - $easyKm * count($easyIsos);
+      if ($deficit > 0 && $vol > 0.001) {
+        $addLong = min($deficit, max(0, (int)floor(0.45 * $vol) - $algoLongKm));
+        $algoLongKm += $addLong;
+        $longPrev = $algoLongKm;
+        $deficit -= $addLong;
+        if ($deficit >= 3) {
+          $algoNotes[] = 'неделя ' . $w['n'] . ': объём недели на '
+            . (int)round($deficit) . ' км меньше планового — при 3 тренировках'
+            . ' в неделю такой километраж не набирается';
+        }
+      }
+      foreach ($slotIsos as $iso) {
+        $j = $slotDays[$iso];
+        if ((int)$iso === (int)$longIso) {
+          $daysOut[$j] = array(
+            'day' => $w['_cal'][$j]['day'], 'date' => $w['_cal'][$j]['date'],
+            'type' => 'Д',
+            'workout' => algo_long_text($ph, $key, $algoLongKm, $pt, $noAnchor),
+            'distance_km' => $algoLongKm,
+            'intensity' => ($ph === 'build2' || $ph === 'build1')
+              ? 'зона 2-3 (часть в темпе)' : 'зона 1-2',
+            'comment' => '',
+          );
+        } elseif (isset($qualMap[(int)$iso])) {
+          $s = $qualPool[min($qualMap[(int)$iso], count($qualPool) - 1)];
+          $txt = $noAnchor ? algo_verbal_txt($s['workout'], $pt)
+            : strtr($s['workout'], $pt);
+          $daysOut[$j] = array(
+            'day' => $w['_cal'][$j]['day'], 'date' => $w['_cal'][$j]['date'],
+            'type' => $s['type'],
+            'workout' => $txt . ', всего ~' . $s['est_km'] . ' км',
+            'distance_km' => $s['est_km'],
+            'intensity' => ($s['zone'] === 'I' || $s['zone'] === 'R')
+              ? 'зона 4' : ($s['zone'] === 'M'
+                ? ($noAnchor ? 'зона 3, «комфортно-тяжело»'
+                    : 'зона 3, целевой темп')
+                : 'зона 3'),
+            'comment' => $noAnchor && $w['n'] === 1
+              ? 'результат теста введите при повторной генерации'
+              : '',
+          );
+        } else {
+          $daysOut[$j] = array(
+            'day' => $w['_cal'][$j]['day'], 'date' => $w['_cal'][$j]['date'],
+            'type' => 'ВОС',
+            'workout' => 'Лёгкий бег ' . $easyKm . ' км'
+              . ($noAnchor ? ', разговорный темп' : ' (' . $pt['E'] . '/км)'),
+            'distance_km' => $easyKm, 'intensity' => 'зона 1-2',
+            'comment' => 'разговорный темп, дыхание свободное',
+          );
+        }
+      }
+      /* валидация шага 6: зазор качественных и доля I+R */
+      if ($qualIso >= 0 && $qualIso2 >= 0 && abs($qualIso - $qualIso2) < 2) {
+        $algoNotes[] = 'неделя ' . $w['n'] . ': две качественные подряд';
+      }
+      $irKm = 0;
+      foreach ($daysOut as $rV) {
+        if (strpos((string)$rV['intensity'], 'зона 4') === 0) {
+          $irKm += is_numeric($rV['distance_km']) ? (float)$rV['distance_km'] : 0;
+        }
+      }
+      if ($vol > 0 && $irKm / $vol > 0.25) { $cntIr++; }
+    }
+    /* добивка: тренировочный день без строки → лёгкий бег (страховка) */
+    foreach ($w['_cal'] as $j => $c) {
+      if (!isset($daysOut[$j])) {
+        $daysOut[$j] = $c['train']
+          ? array(
+              'day' => $c['day'], 'date' => $c['date'], 'type' => 'ВОС',
+              'workout' => 'Лёгкий бег', 'distance_km' => 5,
+              'intensity' => 'зона 1-2', 'comment' => '',
+            )
+          : array(
+              'day' => $c['day'], 'date' => $c['date'], 'type' => 'отдых',
+              'workout' => '', 'distance_km' => '', 'intensity' => '', 'comment' => '',
+            );
+      }
+      ksort($daysOut);
+    }
+    $weeksOut[] = array(
+      'n' => $w['n'], 'start' => $w['start'], 'period' => $w['period'],
+      'volume_km' => $w['volume_km'], 'focus' => $w['focus'],
+      'days' => array_values($daysOut),
+    );
+  }
+  /* валидация: глубина подводки, минимум недель, агрегаты по неделям */
+  if ($cntLong > 0) {
+    $algoNotes[] = 'лонг больше 37% недельного объёма в ' . $cntLong
+      . ' неделях — такой план стоит вести с тренером или снизить объём недели';
+  }
+  if ($cntIr > 0) {
+    $algoNotes[] = 'доля интенсивности I/R выше 25% объёма в ' . $cntIr
+      . ' неделях — для низкого км/нед это ожидаемо, следите за реакцией ног';
+  }
+  $buildVols = array();
+  foreach ($weeksOut as $w) {
+    if (in_array($w['period'], array('База I', 'База II', 'Специальная'), true)) {
+      $buildVols[] = (float)$w['volume_km'];
+    }
+  }
+  $minWk = array('5k' => 8, '10k' => 10, 'half' => 12, 'marathon' => 16);
+  if (count($weeksOut) > 0 && count($weeksOut) < $minWk[$key]) {
+    $algoNotes[] = 'недель в плане меньше нормы для дистанции ('
+      . $minWk[$key] . ') — цель или срок стоит пересмотреть';
+  }
+  if (count($buildVols) > 0) {
+    $peakV = max($buildVols);
+    $lastVol = (float)$weeksOut[count($weeksOut) - 2]['volume_km'];
+    if ($lastVol > 0 && $peakV > 0 && $lastVol < 0.3 * $peakV) {
+      $algoNotes[] = 'последняя беговая неделя глубже -70% от пика — '
+        . 'подъём объёма в подводке можно смягчить';
+    }
+  }
+  return $weeksOut;
+}
+
 /* --- ФАЗА 2: дни по кускам недель ------------------------------ */
+if (!$algo) {
 $chunkSize = 7;   /* недель на один вызов модели */
 $daysByWeek = array();
 for ($off = 0; $off < $cntW; $off += $chunkSize) {
@@ -2135,6 +2806,42 @@ if ($missingDays === count($plan['weeks'])) {
   ai_log('EXTRACT FAIL', 'Ни один кусок дней не разобран — см. CHUNK FAIL');
   status_finish($jobId, false, 'ai_failed');
 }
+} /* конец ИИ-фазы 2 */
+
+if ($algo) {
+  /* режим алгоритма: каждая неделя несёт строку дней. Сброс счётчика —
+     ТОЛЬКО здесь: раньше строка стояла вне if, затирала значение из
+     ИИ-ветки, и предупреждение «недель без тренировок» (лист «Сводка»)
+     не выводилось никогда. */
+  $missingDays = 0;
+  /* сборка плана алгоритмом: те же недели detWk, содержание дней — из пула */
+  if ($algoNoAnchor) {
+    /* темпы словесно: без недавнего результата считать зоны не из чего */
+    $ptAlgo = array(
+      'E' => 'лёгкий разговорный',
+      'M' => 'целевой темп старта',
+      'T' => 'пороговый («комфортно-тяжело»)',
+      'I' => 'быстрый, выше порога',
+      'R' => 'ускорение',
+      'race' => 'целевой темп старта',
+    );
+  } else {
+    $algoFcS = algo_riegel($rrTimeS, $rrKm, $dist);   /* прогноз на дистанцию цели */
+    $ptAlgo = array(
+      'E' => algo_fmt_pace($algoZonesP[0]['pace']) . '-' . algo_fmt_pace($algoZonesP[0]['range_to']),
+      'M' => algo_fmt_pace($algoZonesP[1]['pace']),
+      'T' => algo_fmt_pace($algoZonesP[2]['pace']),
+      'I' => algo_fmt_pace($algoZonesP[3]['pace']),
+      'R' => algo_fmt_pace($algoZonesP[4]['pace']),
+      'race' => algo_fmt_pace($algoFcS / $dist),
+    );
+  }
+  $plan['weeks'] = algo_build_plan(
+    $wk, $specialWeeks, $recWeekN, $raceOut, $raceEve, $raceQuiet, $raceRest,
+    $raceKmByDate, $raceTs, $raceDate, $trainDays, $kmAnketa,
+    $dist, $ptAlgo, $algoRZone, $algoNotes, $algoNoAnchor
+  );
+}
 
 /* --- Сборка .xlsx ---------------------------------------------- */
 /* Минимальный Writer: inline-строки, 3 листа, 1 стиль (жирный) */
@@ -2203,8 +2910,19 @@ $sheet1rows = array(
     $data['days_per_week'] . ' по дням: ' . $trainDaysTxt),
   array('Объём на старте плана', $kmAnketa . ' км/нед (из анкеты): план не опускается'
     . ' ниже этого объёма до самой подводки'),
+  ($data['recent_race']['txt'] !== ''
+    ? array('Недавний старт', $data['recent_race']['txt'])
+    : array('', '')),
+  ($algo
+    ? array('Прогноз результата (Ригель)', $algoNoAnchor
+        ? 'после контрольного теста (неделя 1): результат введите при повторной генерации'
+        : $algoFcTxt . ' на ' . $dist . ' км')
+    : array('', '')),
   (count($specialNotes) > 0
     ? array('Особые периоды (из анкеты: перерывы и старты)', implode('; ', $specialNotes))
+    : array('', '')),
+  (count($algoNotes) > 0
+    ? array('Замечания алгоритма', implode('; ', $algoNotes))
     : array('', '')),
   ($missingDays > 0
     ? array('Внимание: недель без тренировок',
@@ -2213,7 +2931,9 @@ $sheet1rows = array(
     : array('', '')),
   array('Краткая оценка готовности', isset($plan['summary']) ? (string)$plan['summary'] : ''),
   array('Дата составления', date('d.m.Y H:i')),
-  array('Модель генерации', $gigaModel),
+  array('Модель генерации', $algo
+    ? 'Алгоритм (без ИИ): Ригель + периодизация, детерминированный сбор'
+    : $gigaModel),
   array('Примечание', 'План составлен автоматически. Сверяйте его с тренером клуба.'
     . ' Не меняйте резко объёмы и следите за самочувствием.'),
 );
@@ -2338,7 +3058,33 @@ if (!empty($plan['zones']) && is_array($plan['zones'])) {
     $kz++;
   }
 }
-if (!empty($thrAePace) || !empty($thrPanoPace)) {
+if ($algoNoAnchor) {
+  /* без якоря числовых зон Ригеля нет — пульсовые границы по возрасту,
+     темпы словесно; тест-строка объясняет, как получить точные темпы */
+  $sheet3rows[] = array('Контрольный тест',
+    'в первые 2 недели плана: 5К с усилием (или 30 мин на максимум времени)',
+    'по усилию', 'результат теста введите при повторной генерации');
+}
+if ($algo && !$algoNoAnchor) {
+  /* зоны E/M/T/I/R по Ригелю (от недавнего результата): пульс — по
+     клубным границам зон, темп — детерминированный расчёт */
+  $algoZoneRows = array(
+    array('E', 'лёгкий: объём, восстановление, лонги', 'зона 1-2'),
+    array('M', 'целевой темп старта', 'зона 3'),
+    array('T', 'порог: «комфортно-тяжело»', 'зона 3'),
+    array('I', 'интервалы VO2max', 'зона 4'),
+    array('R', 'скорость, повторения', 'зона 4'),
+  );
+  foreach ($algoZoneRows as $ixA => $zrA) {
+    $az = $algoZonesP[$ixA];
+    $ptxA = algo_fmt_pace($az['pace']);
+    if ($az['range_to'] > $az['pace'] + 0.001) {
+      $ptxA .= '-' . algo_fmt_pace($az['range_to']);
+    }
+    $sheet3rows[] = array('Зона ' . $zrA[0], $zrA[1],
+      $zrA[2] . ' уд/мин', $ptxA . ' мин/км');
+  }
+} elseif (!empty($thrAePace) || !empty($thrPanoPace)) {
   /* опорные пороги есть — темпы зон от них */
   foreach (array(
     array('зона 1', 'восстановление', 'до ' . $z1z2),

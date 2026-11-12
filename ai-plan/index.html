@@ -44,7 +44,10 @@
     <p class="section-lead">Ответьте на короткие вопросы — и получите готовый план подготовки
       в Excel-файле: по неделям, с темпами, пульсовыми зонами и пояснениями.
       План опирается на методику тренера клуба «ВЖУХ» Александра Трофимова
-      (техника прежде объёмов, контроль по зонам, восстановление).</p>
+      (техника прежде объёмов, контроль по зонам, восстановление).
+      Два способа генерации: классический — через нейросеть (Lite/Pro) и
+      алгоритмический — без нейросети, по формуле Ригеля и классической
+      периодизации (нужен недавний результат старта).</p>
 
     <form class="review-form" id="plan-form" novalidate>
       <h3 class="review-form-title">Опросник</h3>
@@ -96,6 +99,31 @@
       <label for="f-longest">Самая длинная пробежка за последний месяц, км?</label>
       <input id="f-longest" name="longest_run" type="number" min="0" max="300" value="0">
 
+      <label>Недавний результат на старте — дистанция и время
+        <span class="opt-mark">(для режима «Алгоритм» крайне желателен)</span></label>
+      <div class="row-2">
+        <select id="f-rr-km" name="recent_race_km">
+          <option value="" selected>— нет данных —</option>
+          <option value="1.5">1,5 км</option>
+          <option value="3">3 км</option>
+          <option value="5">5 км</option>
+          <option value="10">10 км</option>
+          <option value="21.1">21,1 км</option>
+          <option value="42.2">42,2 км</option>
+          <option value="other">Другая…</option>
+        </select>
+        <input id="f-rr-time" name="recent_race_time" type="text" maxlength="8"
+          placeholder="например 52:00 или 1:52:30" inputmode="numeric">
+      </div>
+      <div class="row-2" id="rr-km-custom-wrap" style="display:none">
+        <input id="f-rr-km-custom" name="recent_race_km_custom" type="text" maxlength="6" placeholder="дистанция, км (например 8)">
+      </div>
+      <p class="form-note">Режим «Алгоритм» считает по нему все темповые зоны —
+        чем свежее старт (2-6 недель), тем точнее темпы. Нет свежего старта —
+        алгоритм соберёт план словесными темпами и впишет контрольный тест
+        (5К) в первую неделю: после теста сгенерируйте план повторно с его
+        результатом. Для ИИ-режимов поле необязательно — учтётся как контекст.</p>
+
       <label for="f-days-week">Сколько тренировок в неделю готовы выдерживать? *</label>
       <select id="f-days-week" name="days_per_week" required>
         <option value="2">2</option>
@@ -140,9 +168,6 @@
       <label for="f-age">Возраст *</label>
       <input id="f-age" name="age" type="number" min="8" max="99" required>
       <p class="form-note">Пол и возраст нужны для расчёта границ пульсовых зон.</p>
-
-      <label for="f-weight">Вес, кг (опционально)</label>
-      <input id="f-weight" name="weight" type="number" min="25" max="250" placeholder="">
 
       <label for="f-injuries">Травмы и особенности («осторожно с…»)</label>
       <input id="f-injuries" name="injuries" type="text" maxlength="300" placeholder="например: правое колено после ушиба">
@@ -190,10 +215,11 @@
         тренировка; перед значимым стартом план встроит подводку (полумарафон и больше —
         1 неделя, марафон — 2 недели, дистанции короче 15 км — без отдельной подводки).</p>
 
-      <label for="f-model">Модель генерации</label>
+      <label for="f-model">Способ генерации</label>
       <select id="f-model" name="model">
-        <option value="lite" selected>Lite — по умолчанию</option>
-        <option value="pro">Pro — старшая модель (генерация дольше и дороже)</option>
+        <option value="lite" selected>ИИ Lite — по умолчанию (1-3 минуты)</option>
+        <option value="pro">ИИ Pro — старшая модель (генерация дольше и дороже)</option>
+        <option value="algo">Алгоритм — без нейросети, мгновенно (желателен недавний старт)</option>
       </select>
       <div id="f-pro-pass" hidden>
         <label for="f-pro-password">Пароль для Pro</label>
@@ -250,6 +276,11 @@
     cursor: pointer; font-size: 14px;
   }
   .day-pills input[type="checkbox"] { width: auto !important; margin: 0 !important; }
+  /* недавний результат: селект дистанции и поле времени в один ряд */
+  .row-2 { display: flex; gap: 8px; align-items: flex-start; }
+  .row-2 select { flex: 0 0 46%; margin-bottom: 12px; }
+  .row-2 input { flex: 1; }
+  .opt-mark { font-weight: normal; color: #7a828c; font-size: 14px; }
   /* ряды перерывов и промежуточных стартов */
   .list-add { margin-bottom: 8px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
   .brk-row, .race-row {
@@ -359,6 +390,11 @@
   document.getElementById("f-model").addEventListener("change", function () {
     document.getElementById("f-pro-pass").hidden = this.value !== "pro";
   });
+  /* недавний старт: «другая» дистанция — своё поле */
+  document.getElementById("f-rr-km").addEventListener("change", function () {
+    document.getElementById("rr-km-custom-wrap").style.display =
+      this.value === "other" ? "" : "none";
+  });
 
   document.querySelector(".nav-toggle").addEventListener("click", function () {
     var n = document.getElementById("site-nav");
@@ -399,6 +435,19 @@
       note.textContent = "Темп заполните как ММ:СС на километр, например 5:20.";
       return;
     }
+    var rrKmSel = form.recent_race_km.value;
+    var rrKmVal = rrKmSel === "other"
+      ? form.recent_race_km_custom.value.trim().replace(",", ".")
+      : rrKmSel;
+    var rrTime = form.recent_race_time.value.trim();
+    if (rrKmSel === "other" && (!rrKmVal || isNaN(parseFloat(rrKmVal)))) {
+      note.textContent = "Укажите дистанцию недавнего старта в километрах.";
+      return;
+    }
+    if (rrTime && !timeRe.test(rrTime)) {
+      note.textContent = "Время недавнего старта — в формате ЧЧ:ММ:СС или ММ:СС, например 52:00.";
+      return;
+    }
     var prefDays = [];
     prefBoxes.forEach(function (b) {
       if (b.checked) { prefDays.push(b.value); }
@@ -435,7 +484,10 @@
       place: form.place.value,
       gender: gender,
       age: age,
-      weight: form.weight.value.trim(),
+      recent_race: {
+        km: rrKmVal,
+        time: rrTime
+      },
       injuries: form.injuries.value.trim(),
       hr_watch: form.hr_watch.value,
       thr_ae_hr: form.thr_ae_hr.value.trim(),
@@ -468,7 +520,9 @@
     if (!data.job) { data.job = jobId(); }
     curData = data;
     reposted = false;
-    note.textContent = "Готовим план — это занимает 1–3 минуты. Не закрывайте страницу.";
+    note.textContent = data.model === "algo"
+      ? "Составляем план по алгоритму — несколько секунд. Не закрывайте страницу."
+      : "Готовим план — это занимает 1–3 минуты. Не закрывайте страницу.";
     sendPlan(data);
   }
 
@@ -556,7 +610,7 @@
 
   function humanError(code) {
     switch (code) {
-      case "rate":     return "Слишком часто: с одного адреса можно составить 3 плана в час. Попробуйте позже.";
+      case "rate":     return "Слишком часто: с одного адреса можно составить 10 планов в час. Попробуйте позже.";
       case "spam":     return "Похоже на робота — заявка отклонена.";
       case "format":   return "Проверьте заполнение полей.";
       case "bad_fields": return "Укажите пол и возраст — без них не рассчитать пульсовые зоны.";
@@ -567,6 +621,7 @@
       case "busy":     return "Занято — попробуйте через минуту.";
       case "gone":     return "Задача устарела — запустите генерацию ещё раз.";
       case "pro_pass": return "Неверный пароль для модели Pro. Выберите Lite или введите пароль.";
+      case "need_recent_race": return "Для режима «Алгоритм» укажите недавний результат старта — дистанцию и время: он нужен для расчёта темпов плана.";
       default:         return "Что-то пошло не так. Попробуйте ещё раз; если не помогает — напишите нам в Telegram.";
     }
   }
