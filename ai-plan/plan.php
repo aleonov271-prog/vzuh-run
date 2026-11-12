@@ -60,13 +60,15 @@ const GIGA_INSECURE_TLS = true;
    генератора). Штатное значение для прода — 3, оно же указано в README
    и в сводке ограничений: перед релизом вернуть 3. */
 const RATE_LIMIT = 10;
+/* алгоритм без ИИ: отдельная квота. Генерация дешёвая, но каждый вызов
+   создаёт xlsx в out/ — 20 в час с одного адреса хватает с запасом */
+const ALGO_RATE_LIMIT = 20;
 const RATE_WINDOW = 3600;   /* за час */
 
 define('DIR_DATA', __DIR__ . '/data');
 define('DIR_OUT', __DIR__ . '/out');
 define('TOKEN_FILE', DIR_DATA . '/token-cache.json');
 
-define('MAX_COMMENT', 1000);
 define('MAX_TEXT', 300);
 
 /* --- Служебное ------------------------------------------------- */
@@ -82,9 +84,22 @@ function respond($ok, $error = '', $extra = array()) {
   exit;
 }
 
+/* Уборка runtime: готовые планы старше 24 ч и статусы задач старше часа.
+   Вызывается в начале каждой генерации (а не только в конце успешной) —
+   падение или брошенная задача больше не оставляет мусор навсегда. */
+function plan_cleanup() {
+  foreach (glob(DIR_OUT . '/plan-*.xlsx') as $f) {
+    if (is_file($f) && (time() - filemtime($f)) > 86400) { @unlink($f); }
+  }
+  foreach (glob(DIR_DATA . '/plan-status-*.json') as $f) {
+    if (is_file($f) && (time() - filemtime($f)) > 3600) { @unlink($f); }
+  }
+}
+
 /* итог генерации (уже после мгновенного ack): страница вычисляет результат,
    опрашивая файл статуса. Тело ответа браузеру больше не отправляется. */
 function status_finish($jobId, $ok, $error = '', $extra = array()) {
+  $GLOBALS['plan_done'] = true;
   ai_log('OUT', ($ok ? 'ok ' : 'error ' . $error)
     . (isset($extra['url']) ? $extra['url'] : ''));
   @file_put_contents(DIR_DATA . '/plan-status-' . $jobId . '.json',
@@ -98,7 +113,32 @@ date_default_timezone_set('Europe/Moscow');
 /* браузер далёк не всегда дожидается: пусть скрипт доделает файл, даже
    если связь уже оборвалась (xlsx всё равно появится в out/) */
 ignore_user_abort(true);
-set_time_limit(600);
+/* 600 с не хватало на длинный план: 8 кусков по 240 с + повторы дают
+   до ~3800 с, и PHP убивал задачу уже после ack */
+set_time_limit(900);
+
+/* Страховка от fatal (память, max_execution_time, ошибка в xlsx):
+   без неё задача навсегда остаётся в статусе «wait», и страница
+   опрашивает её ~20 минут. Обработчик ставим до тяжёлых фаз. */
+$GLOBALS['plan_job'] = '';
+$GLOBALS['plan_done'] = false;
+register_shutdown_function(function () {
+  if (!empty($GLOBALS['plan_done'])) { return; }
+  $e = error_get_last();
+  if (!is_array($e) || !in_array($e['type'],
+      array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR), true)) {
+    return;
+  }
+  $job = (string)$GLOBALS['plan_job'];
+  if (!preg_match('/^[a-z0-9]{16}$/', $job)) { return; }   /* не наш запрос */
+  @file_put_contents(DIR_DATA . '/plan-status-' . $job . '.json',
+    json_encode(array('ok' => false, 'error' => 'fatal'), JSON_UNESCAPED_UNICODE),
+    LOCK_EX);
+  @file_put_contents(DIR_DATA . '/model-log.txt',
+    "==== " . date('Y-m-d H:i:s') . " FATAL ====" . PHP_EOL
+    . $e['message'] . ' @ ' . basename($e['file']) . ':' . $e['line'] . PHP_EOL,
+    FILE_APPEND | LOCK_EX);
+});
 
 /* --- GET: опрос статуса готовящегося плана ----------------------
    POST отдаёт моментальный ack с идентификатором задачи и продолжает
@@ -139,7 +179,6 @@ $modelOpt = (isset($in['model']) && $in['model'] === 'pro') ? 'pro'
 /* algo — детерминированный генератор (Riegel + периодизация): без GigaChat,
    без rate-limit, моментальный. ИИ-фазы ниже оборачиваются в if (!$algo) */
 $algo = ($modelOpt === 'algo');
-$modeLabel = $algo ? 'Алгоритм (без ИИ)' : '';
 $gigaModel = GIGA_MODEL;                       /* лёгкая — вся база */
 if ($modelOpt === 'pro') {
   if (!hash_equals(PRO_PASS, (string)($in['pro_pass'] ?? ''))) {
@@ -246,21 +285,54 @@ if ($targetTime !== '' && $dist > 0 &&
 /* пороги (опционально): пульс в уд/мин и темп «ЧЧ:ММ»/«М:СС» на км.
    Пульс порога ниже 100 не бывает физически — считаем «не указано»;
    темп принимаем в разумных пределах 2:00–15:00 на км */
-$paceRe = '/^(\d{1,2}):[0-5]\d(:[0-5]\d)?$/';
+$paceRe = '/^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/';
+
+/* «52:00» → 3120 с, «1:52:30» → 6750 с, мусор → 0.
+   Нужна отдельная функция: $paceRe описывает темп (ММ:СС) и раньше
+   использовалась ещё и для времени старта, где читались группы 2 и 3 —
+   их в той регулярке не было. «1:52:30» превращалось в 60 с (за 10 км),
+   и зоны Ригеля выходили вида «1:07-1:37/км». */
+function time_to_sec($s) {
+  $s = trim((string)$s);
+  if (preg_match('/^(\d{1,2}):([0-5]\d)$/', $s, $m)) {          /* ММ:СС */
+    return (int)$m[1] * 60 + (int)$m[2];
+  }
+  if (preg_match('/^(\d{1,2}):([0-5]\d):([0-5]\d)$/', $s, $m)) { /* ЧЧ:ММ:СС */
+    return (int)$m[1] * 3600 + (int)$m[2] * 60 + (int)$m[3];
+  }
+  return 0;
+}
+
 
 /* недавний результат на старте (дистанция + время): для режима «Алгоритм»
    обязателен — единственный корень расчёта темповых зон (формула Ригеля);
    для ИИ-режимов — необязательный контекст в данных бегуна */
 $rrKm = 0.0;
 $rrTimeS = 0.0;
+$rrBad = '';
 if (isset($in['recent_race']) && is_array($in['recent_race'])) {
   $rrKmRaw = str_replace(',', '.', (string)($in['recent_race']['km'] ?? ''));
   if (is_numeric($rrKmRaw) && (float)$rrKmRaw >= 1 && (float)$rrKmRaw <= 300) {
     $rrKm = (float)$rrKmRaw;
   }
   $rrTimeRaw = str_replace(' ', '', clean($in['recent_race']['time'] ?? '', 12));
-  if (preg_match($paceRe, $rrTimeRaw, $rrM)) {
-    $rrTimeS = (int)$rrM[1] * 60 + (int)$rrM[2] + (!empty($rrM[3]) ? (int)$rrM[3] : 0);
+  $rrTimeS = (float)time_to_sec($rrTimeRaw);
+  /* правдоподобие: темп 2:00–15:00/км — те же границы, что у порогов.
+     «10 км за 0:10» давало зоны «0:05/км», «300 км» — «0:00/км»; такой
+     результат считаем не указанным и честно пишем об этом в замечаниях. */
+  if ($rrKm > 0 && $rrTimeS > 0) {
+    $rrPace = $rrTimeS / $rrKm;
+    if ($rrPace < 120 || $rrPace > 900) {
+      $rrBad = 'недавний результат вне разумных границ ('
+        . rtrim(rtrim(number_format($rrKm, 1, ',', ''), '0'), ',') . ' км за '
+        . $rrTimeRaw . ') — проигнорирован';
+      $rrKm = 0.0;
+      $rrTimeS = 0.0;
+    }
+  } elseif ($rrTimeRaw !== '' && $rrTimeS <= 0) {
+    $rrBad = 'время недавнего старта не разобрано («' . $rrTimeRaw
+      . '») — проигнорировано, нужен формат ММ:СС или ЧЧ:ММ:СС';
+    $rrKm = 0.0;
   }
 }
 /* план новичка допустим и без недавнего результата (шаг 1 алгоритма):
@@ -273,7 +345,7 @@ $thrAeHr = $thrAeHr >= 100 ? $thrAeHr : 0;
 $thrPanoHr = $thrPanoHr >= 100 ? $thrPanoHr : 0;
 $paceOk = function ($s) use ($paceRe) {
   if (!preg_match($paceRe, (string)$s, $m)) { return ''; }
-  $sec = (int)$m[1] * 60 + (int)$m[2];
+  $sec = time_to_sec((string)$s);
   return ($sec >= 120 && $sec <= 900) ? (string)$s : '';
 };
 $thrAePace = $paceOk($in['thr_ae_pace'] ?? '');
@@ -399,6 +471,9 @@ sort($trainDays);
    добираем из дефолтной тройки, 7 — оставляем первые 6 (для ИИ-режимов
    число дней не трогаем) */
 $algoNotes = array();
+/* результат старта не принят — сказать об этом в «Замечаниях алгоритма»,
+   а не строить зоны из мусора молча */
+if ($algo && $rrBad !== '') { $algoNotes[] = $rrBad; }
 if ($algo) {
   if (count($trainDays) < 3) {
     foreach ($defSets[3] as $dA) {
@@ -414,6 +489,9 @@ if ($algo) {
     $algoNotes[] = 'раскладка алгоритма рассчитана максимум на 6 тренировок '
       . 'в неделю — 7-й день отброшен';
   }
+  /* в Сводке показываем фактическое число тренировок, а не то, что в анкете:
+     иначе «2 по дням» при трёх днях в плане */
+  $data['days_per_week'] = count($trainDays);
 }
 $raceIso = 0;
 if ($raceDate !== '') {
@@ -438,27 +516,33 @@ ai_log('REQ', 'дист=' . $dist
 /* --- Лимит частоты (по образцу reviews.php) -------------------- */
 /* Лимит и ключ GigaChat — только для ИИ-режимов: алгоритм детерминирован,
    не тратит токены и не ограничивается */
+/* два независимых счётчика: ИИ тратит токены GigaChat, алгоритм — нет,
+   но каждый запрос алгоритма пишет xlsx в out/ и грузит CPU. Раньше
+   алгоритм не ограничивался вообще, и скрипт мог забить диск планами. */
 if (!is_dir(DIR_DATA)) { @mkdir(DIR_DATA, 0755, true); }
-if (!$algo) {
-  $salt = __FILE__ . '|' . php_uname();
-  $ipHash = md5(($_SERVER['REMOTE_ADDR'] ?? '') . $salt);
-  $rateFile = DIR_DATA . '/_rate-' . $ipHash . '.json';
-  $now = time();
-  $stamps = @json_decode(@file_get_contents($rateFile), true);
-  if (!is_array($stamps)) { $stamps = array(); }
-  $stamps = array_values(array_filter($stamps, function ($t) use ($now) {
-    return is_numeric($t) && ($now - (int)$t) < RATE_WINDOW;
-  }));
-  if (count($stamps) >= RATE_LIMIT) {
-    http_response_code(429);
-    respond(false, 'rate');
-  }
-  $stamps[] = $now;
-  @file_put_contents($rateFile, json_encode($stamps), LOCK_EX);
-
-  /* --- GigaChat: обмен ключа на временный токен ----------------- */
-  if (GIGA_KEY === '') { http_response_code(503); respond(false, 'no_key'); }
+$salt = __FILE__ . '|' . php_uname();
+$ipHash = md5(($_SERVER['REMOTE_ADDR'] ?? '') . $salt);
+$rateLimit = $algo ? ALGO_RATE_LIMIT : RATE_LIMIT;
+$rateFile = DIR_DATA . '/_rate-' . ($algo ? 'algo-' : '') . $ipHash . '.json';
+$now = time();
+$stamps = @json_decode(@file_get_contents($rateFile), true);
+if (!is_array($stamps)) { $stamps = array(); }
+$stamps = array_values(array_filter($stamps, function ($t) use ($now) {
+  return is_numeric($t) && ($now - (int)$t) < RATE_WINDOW;
+}));
+if (count($stamps) >= $rateLimit) {
+  http_response_code(429);
+  respond(false, $algo ? 'rate_algo' : 'rate');
 }
+$stamps[] = $now;
+@file_put_contents($rateFile, json_encode($stamps), LOCK_EX);
+
+/* --- GigaChat: ключ нужен только ИИ-режимам ------------------- */
+if (!$algo && GIGA_KEY === '') { http_response_code(503); respond(false, 'no_key'); }
+
+/* уборка прошлых запусков: раньше чистка была только в конце успешной
+   генерации, поэтому упавшие задачи и мусор в out/ жили вечно */
+plan_cleanup();
 
 /* --- Мгновенный ack: браузеру достаточно идентификатора задачи,
        генерация продолжается уже ПОСЛЕ ответа. Короткий запрос не рвёт
@@ -469,6 +553,8 @@ if (!preg_match('/^[a-z0-9]{16}$/', $jobId)) {
 }
 @file_put_contents(DIR_DATA . '/plan-status-' . $jobId . '.json',
   json_encode(array('ok' => false, 'wait' => true)), LOCK_EX);
+/* с этого момента fatal-обработчик знает, какую задачу закрывать */
+$GLOBALS['plan_job'] = $jobId;
 header('Content-Type: application/json; charset=utf-8');
 echo json_encode(array('ok' => true, 'job' => $jobId), JSON_UNESCAPED_UNICODE);
 if (function_exists('fastcgi_finish_request')) { fastcgi_finish_request(); }
@@ -749,7 +835,7 @@ function call_model($payload) {
       array(
         'Authorization: Bearer ' . $token,
         'Content-Type: application/json',
-      ), $body, 240);
+      ), $body, 180);
     if ($code === 401) {  /* токен отлетел — обновить и повторить */
       @unlink(TOKEN_FILE);
       list($token, $ok) = oauth_token();
@@ -1310,7 +1396,6 @@ if ($algoNoAnchor) {
   /* новичок без недавнего результата: темпы словесные, зоны пульса — по
      возрасту, якорь для пересчёта набирается контрольным тестом недели 1 */
   $algoZonesP = null;
-  $algoRZone = 'T';
   $plan['summary'] = 'План построен без недавнего результата: объёмы и фазы'
     . ' рассчитаны сервером, темпы — словесно (по усилию и пульсу). В первые'
     . ' 2 недели вписан контрольный тест 5К (или 30 мин на максимум): после'
@@ -1332,7 +1417,6 @@ if ($algoNoAnchor) {
   );
 } else {
   $algoZonesP = algo_zones($rrKm, $rrTimeS);          /* E/M/T/I/R, сек/км */
-  $algoRZone = ($dist >= 40) ? 'M' : (($dist >= 20) ? 'T' : 'I');
   $algoFcS = algo_riegel($rrTimeS, $rrKm, $dist);     /* прогноз на дистанцию цели */
   $algoFcTxt = $algoFcS >= 3600
     ? sprintf('%d:%02d:%02d', (int)floor($algoFcS / 3600),
@@ -1497,11 +1581,6 @@ function algo_long_peak($key) {
   $peaks = array('5k' => 12, '10k' => 16, 'half' => 20, 'marathon' => 33);
   return $peaks[$key];
 }
-function algo_taper_long_fr($key) {
-  $fr = array('5k' => array(0.45), '10k' => array(0.70, 0.45),
-    'half' => array(0.70, 0.45), 'marathon' => array(0.75, 0.55, 0.40));
-  return $fr[$key];
-}
 /* Пул качественных сессий: фаза × дистанция (sessions.py).
    Возвращает список ['type' (код клуба), 'zone', 'workout', 'est_km'];
    {E}{M}{T}{I}{R}{race} в тексте подставляются темпами из зон. */
@@ -1613,7 +1692,7 @@ function algo_verbal_txt($txt, $pt) {
 function algo_build_plan(
   $wk, $specialWeeks, $recWeekN, $raceOut, $raceEve, $raceQuiet, $raceRest,
   $raceKmByDate, $raceDateTs, $raceDateStr, $trainDays, $kmAnketa,
-  $dist, $pt, $raceZoneCode, &$algoNotes, $noAnchor = false
+  $dist, $pt, &$algoNotes, $noAnchor = false
 ) {
   $key = algo_dist_key_of($dist);
   $peakLong = algo_long_peak($key);
@@ -1687,7 +1766,7 @@ function algo_build_plan(
           'workout' => 'СТАРТ: ' . $raceOut[$c['date']],
           'distance_km' => $rKmOut,
           'intensity' => ($w['period'] === 'Подводка' && strpos($raceOut[$c['date']], 'Целевой') === 0)
-            ? 'целевой темп' . ($pt['race'] !== '' ? ' ' . $pt['race'] : '')
+            ? 'целевой темп' . ($pt['{race}'] !== '' ? ' ' . $pt['{race}'] : '')
             : 'контрольный темп',
           'comment' => 'ровный консервативный старт: первые километры чуть'
             . ' медленнее целевого темпа, разминка отдельной лёгкой пробежкой',
@@ -1789,7 +1868,6 @@ function algo_build_plan(
       /* лонг — в последний тренировочный день; качественные — с зазором
          ≥ 48 ч от лонга и друг от друга, ближе к (лонг − 3 дня) */
       $longIso = $slotIsos[count($slotIsos) - 1];
-      $longJ = $slotDays[$longIso];
       /* кривая лонга: рост по строительным неделям, тапер — доли пика */
       if ($ph === 'taper') {
         $frac = $tapDone < count($fracs) ? $fracs[$tapDone] : 0.45;
@@ -1908,7 +1986,7 @@ function algo_build_plan(
             'day' => $w['_cal'][$j]['day'], 'date' => $w['_cal'][$j]['date'],
             'type' => 'ВОС',
             'workout' => 'Лёгкий бег ' . $easyKm . ' км'
-              . ($noAnchor ? ', разговорный темп' : ' (' . $pt['E'] . '/км)'),
+              . ($noAnchor ? ', разговорный темп' : ' (' . $pt['{E}'] . '/км)'),
             'distance_km' => $easyKm, 'intensity' => 'зона 1-2',
             'comment' => 'разговорный темп, дыхание свободное',
           );
@@ -2818,28 +2896,32 @@ if ($algo) {
   if ($algoNoAnchor) {
     /* темпы словесно: без недавнего результата считать зоны не из чего */
     $ptAlgo = array(
-      'E' => 'лёгкий разговорный',
-      'M' => 'целевой темп старта',
-      'T' => 'пороговый («комфортно-тяжело»)',
-      'I' => 'быстрый, выше порога',
-      'R' => 'ускорение',
-      'race' => 'целевой темп старта',
+      '{E}' => 'лёгкий разговорный',
+      '{M}' => 'целевой темп старта',
+      '{T}' => 'пороговый («комфортно-тяжело»)',
+      '{I}' => 'быстрый, выше порога',
+      '{R}' => 'ускорение',
+      '{race}' => 'целевой темп старта',
     );
   } else {
     $algoFcS = algo_riegel($rrTimeS, $rrKm, $dist);   /* прогноз на дистанцию цели */
+    /* ключи — вместе с фигурными скобками: раньше strtr получал голые
+       'E','M','T','I','R' и подменял ИМИ же буквы-метки в тексте
+       («Интервалы I:» → «Интервалы 4:43:»), а {I} оставался с скобками.
+       Шаблоны пишутся как {I}/км, {T}/км, {race}/км — так и подставляем. */
     $ptAlgo = array(
-      'E' => algo_fmt_pace($algoZonesP[0]['pace']) . '-' . algo_fmt_pace($algoZonesP[0]['range_to']),
-      'M' => algo_fmt_pace($algoZonesP[1]['pace']),
-      'T' => algo_fmt_pace($algoZonesP[2]['pace']),
-      'I' => algo_fmt_pace($algoZonesP[3]['pace']),
-      'R' => algo_fmt_pace($algoZonesP[4]['pace']),
-      'race' => algo_fmt_pace($algoFcS / $dist),
+      '{E}' => algo_fmt_pace($algoZonesP[0]['pace']) . '-' . algo_fmt_pace($algoZonesP[0]['range_to']),
+      '{M}' => algo_fmt_pace($algoZonesP[1]['pace']),
+      '{T}' => algo_fmt_pace($algoZonesP[2]['pace']),
+      '{I}' => algo_fmt_pace($algoZonesP[3]['pace']),
+      '{R}' => algo_fmt_pace($algoZonesP[4]['pace']),
+      '{race}' => algo_fmt_pace($algoFcS / $dist),
     );
   }
   $plan['weeks'] = algo_build_plan(
     $wk, $specialWeeks, $recWeekN, $raceOut, $raceEve, $raceQuiet, $raceRest,
     $raceKmByDate, $raceTs, $raceDate, $trainDays, $kmAnketa,
-    $dist, $ptAlgo, $algoRZone, $algoNotes, $algoNoAnchor
+    $dist, $ptAlgo, $algoNotes, $algoNoAnchor
   );
 }
 
@@ -3084,7 +3166,9 @@ if ($algo && !$algoNoAnchor) {
     $sheet3rows[] = array('Зона ' . $zrA[0], $zrA[1],
       $zrA[2] . ' уд/мин', $ptxA . ' мин/км');
   }
-} elseif (!empty($thrAePace) || !empty($thrPanoPace)) {
+} elseif (!$algo && (!empty($thrAePace) || !empty($thrPanoPace))) {
+  /* числовые зоны от порогов — только ИИ-режиму: у новичка в листе 3
+     «Контрольный тест» уже стоит выше, дублировать его зонами не нужно */
   /* опорные пороги есть — темпы зон от них */
   foreach (array(
     array('зона 1', 'восстановление', 'до ' . $z1z2),
@@ -3237,16 +3321,15 @@ $zip->addFromString('xl/worksheets/sheet2.xml',
     $sheet2rows, array(28, 11, 6, 11, 52, 6, 24, 46)));
 $zip->addFromString('xl/worksheets/sheet3.xml',
   xlsx_sheet(array('Зона','Назначение','Пульс, уд/мин','Темп'), $sheet3rows, array(10, 22, 16, 44)));
-$zip->close();
+if ($zip->close() !== true) {
+  /* запись архива сорвалась — битую ссылку отдавать нельзя */
+  @unlink($fPath);
+  status_finish($jobId, false, 'write_failed');
+}
 
-/* --- Чистка старых файлов (>24 ч) ------------------------------ */
-foreach (glob(DIR_OUT . '/plan-*.xlsx') as $f) {
-  if (is_file($f) && (time() - filemtime($f)) > 86400) { @unlink($f); }
-}
-/* статусы задач живут в разы меньше: опрос длится максимум ~15 минут */
-foreach (glob(DIR_DATA . '/plan-status-*.json') as $f) {
-  if (is_file($f) && (time() - filemtime($f)) > 3600) { @unlink($f); }
-}
+/* старые планы и статусы убирает plan_cleanup() — она вызывается в начале
+   каждой генерации, поэтому мусор уходит и после упавших задач */
+plan_cleanup();
 
 /* --- Готово: ссылка -------------------------------------------- */
 status_finish($jobId, true, '', array(
