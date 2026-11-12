@@ -1,0 +1,12 @@
+{
+  "name": "Демо-бегун",
+  "race_distance_km": 21.0975,
+  "race_date": "2027-02-14",
+  "goal": { "type": "time", "target": "01:50:00" },
+  "recent_race": { "distance_km": 10, "time": "00:52:00", "date": "2026-10-10" },
+  "current_weekly_km": 40,
+  "days_per_week": 5,
+  "experience_years": 2,
+  "injuries": [],
+  "notes": "Бегает в парке, стадион доступен по вт/чт"
+}
