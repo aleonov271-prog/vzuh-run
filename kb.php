@@ -94,7 +94,16 @@ function kbfail($code, $http = null) {
   respond(false, $code);
 }
 
-/* Ротация бэкапов: prev → prev-2 → затирается */
+/* Ротация бэкапов ДО записи: prev → prev-2 → затирается.
+   Копировать надо ДО rename: после записи $target уже новая версия,
+   и бэкап получался копией новой (то есть бесполезным). */
+if (is_file($target)) {
+  if (is_file($backups . '/knowledge-prev.js')) {
+    @copy($backups . '/knowledge-prev.js', $backups . '/knowledge-prev-2.js');
+  }
+  @copy($target, $backups . '/knowledge-prev.js');
+}
+
 $tmpPath  = $target . '.tmp';
 $written  = @file_put_contents($tmpPath, $content, LOCK_EX);
 $renamed  = $written !== false && @rename($tmpPath, $target);
@@ -102,13 +111,6 @@ $renamed  = $written !== false && @rename($tmpPath, $target);
 if ($written === false || !$renamed) {
   @unlink($tmpPath);
   kbfail('write_failed', 500);
-}
-
-if (is_file($target)) {
-  if (is_file($backups . '/knowledge-prev.js')) {
-    @copy($backups . '/knowledge-prev.js', $backups . '/knowledge-prev-2.js');
-  }
-  @copy($target, $backups . '/knowledge-prev.js');
 }
 
 flock($lock, LOCK_UN);

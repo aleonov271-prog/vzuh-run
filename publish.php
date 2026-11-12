@@ -55,8 +55,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $password   = isset($_POST['password']) ? (string)$_POST['password'] : '';
 $content    = isset($_POST['content'])  ? (string)$_POST['content']  : '';
 
-/* Проверка пароля (устойчиво к side-channel) */
+/* Проверка пароля (устойчиво к side-channel).
+   ВАЖНО: пустая константа — это «пароль не задан», а не «пароль пустой».
+   Без secrets.php заглушка из строки 32 делает PUBLISH_PASSWORD = '';
+
+   Если эту проверку убрать, hash_equals('', '') пропустит запрос с пустым
+   паролем, и публиковать расписание сможет кто угодно (как в kb.php). */
 if (!defined('PUBLISH_PASSWORD') ||
+    PUBLISH_PASSWORD === '' ||
     PUBLISH_PASSWORD === 'ЗАДАЙТЕ-ПАРОЛЬ-ЗДЕСЬ') {
   http_response_code(500);
   respond(false, 'password_not_set');

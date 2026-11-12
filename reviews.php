@@ -175,6 +175,15 @@ if (strlen($configScript) > MAX_FILE_BYTES) {
   }
 }
 
+/* Ротируемый бэкап ПРЕДЫДУЩЕЙ версии — строго ДО записи новой:
+   после rename файл $target уже содержит новый отзыв, и копия
+   «предыдущей версии» получалась копией новой. */
+if (!is_dir($backups)) { @mkdir($backups, 0755, true); }
+if (is_file($backups . '/reviews-prev.js')) {
+  @copy($backups . '/reviews-prev.js', $backups . '/reviews-prev-2.js');
+}
+if (is_file($target)) { @copy($target, $backups . '/reviews-prev.js'); }
+
 $tmpPath = $target . '.tmp';
 $written = @file_put_contents($tmpPath, $configScript, LOCK_EX);
 $renamed = $written !== false && @rename($tmpPath, $target);
@@ -182,13 +191,6 @@ if (!$written || !$renamed) {
   @unlink($tmpPath);
   fail('write_failed', 500);
 }
-
-/* Ротируемый бэкап предыдущей версии */
-if (!is_dir($backups)) { @mkdir($backups, 0755, true); }
-if (is_dir($backups) && is_file($backups . '/reviews-prev.js')) {
-  @copy($backups . '/reviews-prev.js', $backups . '/reviews-prev-2.js');
-}
-if (is_dir($backups)) { @copy($target, $backups . '/reviews-prev.js'); }
 
 flock($lock, LOCK_UN);
 @fclose($lock);
