@@ -1,0 +1,16 @@
+# Бэкапы данных сайта: только для сервера, наружу не отдаются.
+# Здесь лежат предыдущие версии отзывов (имена и тексты посетителей) —
+# публичный доступ к каталогу и файлам запрещён.
+#
+# Options -Indexes завёрнут в IfModule: если хостинг не разрешает
+# переопределять Options, .htaccess всё равно останется рабочим
+# (иначе каталог вернул бы 500 и сломал публикацию).
+
+<IfModule mod_autoindex.c>
+  Options -Indexes
+  IndexIgnore *
+</IfModule>
+
+<FilesMatch "\.(js|json|txt|log|lock|tmp)$">
+Require all denied
+</FilesMatch>

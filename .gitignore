@@ -7,9 +7,13 @@ secrets.php
 
 # данные времени исполнения сервиса планов
 ai-plan/data/
-ai-plan/out/
+# в out/ лежат планы с данными бегуна; версионируется только защита каталога
+ai-plan/out/*
+!ai-plan/out/.htaccess
 ai-plan/diag.php
 ai-plan/delete-diag.php
+# снимок прошлой версии генератора (148 КБ): истории не нужен, в webroot опасен
+ai-plan/plan-backup-pre-algo.php
 ai-plan/model-log.txt
 ai-plan/*.xlsx
 
@@ -28,7 +32,12 @@ knowledge — копия.html
 
 # персональные данные посетителей — только на хостинге
 data/reviews.js
-data/_backups/
+# бэкапы отзывов и счётчики лимитов: версионируются только .htaccess,
+# которые закрывают эти каталоги от веба
+data/_backups/*
+!data/_backups/.htaccess
+data/_rate/*
+!data/_rate/.htaccess
 
 # системное
 Thumbs.db
@@ -36,3 +45,13 @@ Thumbs.db
 *.log
 node_modules/
 __pycache__/
+# выход python-зеркала генератора (пример плана — не контент сайта)
+Work/plan_generator/output/
+# восстановление на хостинге: внутренние детали инфраструктуры
+2026-11-05 — восстановление на хостинге — инструкция.md
+
+# производственный артефакт: комплект для заливки на хостинг
+сайт/
+Work/site-deploy.zip
+# история работы: внутренний документ проекта
+2026-11-12 — история работы по проекту — отчёт.md

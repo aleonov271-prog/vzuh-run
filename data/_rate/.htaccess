@@ -1,0 +1,14 @@
+# Счётчики лимита частоты (md5-хэши IP + отметки времени).
+# Наружу не отдаются: это не ПДн в чистом виде, но и не публичный контент.
+#
+# Options -Indexes завёрнут в IfModule: если хостинг не разрешает
+# переопределять Options, .htaccess останется рабочим.
+
+<IfModule mod_autoindex.c>
+  Options -Indexes
+  IndexIgnore *
+</IfModule>
+
+<FilesMatch "\.(json|txt|log|lock|tmp)$">
+Require all denied
+</FilesMatch>
